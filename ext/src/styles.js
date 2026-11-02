@@ -124,12 +124,16 @@
   display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px;
 }
 .ho-question-label { font-size: 11px; color: var(--ho-fg-dim); letter-spacing: .02em; }
-.ho-jump-btn {
+.ho-question-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.ho-jump-btn, .ho-copy-btn {
   font: inherit; font-size: 11px; font-family: var(--ho-font);
   color: var(--ho-fg-dim); background: transparent; border: 1px solid var(--ho-border);
   border-radius: 6px; padding: 3px 9px; cursor: pointer; white-space: nowrap;
 }
-.ho-jump-btn:hover { color: var(--ho-fg); background: var(--ho-hover); }
+.ho-jump-btn:hover, .ho-copy-btn:hover { color: var(--ho-fg); background: var(--ho-hover); }
+.ho-copy-btn[disabled] { opacity: .4; cursor: default; }
+.ho-copy-btn[disabled]:hover { color: var(--ho-fg-dim); background: transparent; }
+.ho-copy-btn.ok { color: #7ee787; border-color: #7ee787; }
 .ho-prose pre.ho-question, .ho-question {
   margin: 0; background: var(--ho-bg-code); border: 1px solid var(--ho-border); border-radius: 10px;
   padding: 12px 14px; font-family: var(--ho-mono); font-size: 12.5px; line-height: 1.65;

@@ -37,6 +37,9 @@
 
   const truncate = (text, n) => (text.length > n ? text.slice(0, n) + "…" : text);
 
+  /** 复制用的 Markdown：去掉联网检索的 `[reference:N]` 角标（那是渲染用的记号，纯文本里只是噪音）。 */
+  const copyableMd = (s) => String(s == null ? "" : s).replace(/\[reference:\d+\]/g, "").replace(/[ \t]+$/gm, "");
+
   /* ------------------------------------------------------------ 代码高亮 */
   const PRISM = window.Prism;
   const LANG_ALIAS = window.__dsLangAlias || {};
@@ -71,20 +74,23 @@
     return done;
   }
 
-  /** 把文本写进剪贴板；失败时退化为"选中文本"，让用户按 Ctrl+C。 */
-  function copyText(text, btn) {
+  /** 把文本写进剪贴板；失败时退化为"选中 fallbackEl（默认该代码块）的文本"，让用户按 Ctrl+C。
+   *  按钮文案会短暂变成"已复制"，1.6 秒后恢复成 btn.__label（默认"复制"）。 */
+  function copyText(text, btn, fallbackEl) {
+    const label = (btn && btn.__label) || "复制";
     const flash = (msg, ok) => {
       if (!btn) return;
       btn.textContent = msg;
       btn.classList.toggle("ok", !!ok);
       clearTimeout(btn.__dsTimer);
-      btn.__dsTimer = setTimeout(() => { btn.textContent = "复制"; btn.classList.remove("ok"); }, 1600);
+      btn.__dsTimer = setTimeout(() => { btn.textContent = label; btn.classList.remove("ok"); }, 1600);
     };
     const legacy = () => {
       try {
-        const pre = btn.closest(".ho-code").querySelector("pre");
+        const el = fallbackEl || (btn && btn.closest(".ho-code") && btn.closest(".ho-code").querySelector("pre"));
+        if (!el) { flash("复制失败", false); return; }
         const range = document.createRange();
-        range.selectNodeContents(pre);
+        range.selectNodeContents(el);
         const sel = window.getSelection();
         sel.removeAllRanges();
         sel.addRange(range);
@@ -467,8 +473,9 @@
 
     const q = state.query.trim();
     const qLower = q ? (P.searchableText(q) || q).toLowerCase() : "";
+    const answerMd = copyableMd(t.answers.map((a) => a.text).filter((s) => s && s.trim()).join("\n\n"));
 
-    // 顶部：完整提问（代码框样式）+ 跳到回答按钮
+    // 顶部：完整提问（代码框样式）+ 复制提问/复制回答/跳到回答
     const qBox = document.createElement("div");
     qBox.className = "ho-question-box";
     const bar = document.createElement("div");
@@ -476,19 +483,52 @@
     const label = document.createElement("span");
     label.className = "ho-question-label";
     label.textContent = "提问 · 第 " + (state.selected + 1) + " 轮";
+    const actions = document.createElement("div");
+    actions.className = "ho-question-actions";
     const jump = document.createElement("button");
     jump.type = "button";
     jump.className = "ho-jump-btn";
     jump.textContent = "跳到回答 ↓";
     jump.addEventListener("click", () => scrollToAnswer(pane));
+    actions.appendChild(jump);
     bar.appendChild(label);
-    bar.appendChild(jump);
+    bar.appendChild(actions);
     const qPre = document.createElement("pre");
     qPre.className = "ho-question";
     qPre.textContent = t.q;
+
+    const copyQ = document.createElement("button");
+    copyQ.type = "button";
+    copyQ.className = "ho-copy-btn ho-copy-q";
+    copyQ.textContent = "复制提问";
+    copyQ.__label = "复制提问";
+    copyQ.title = "把这一轮的提问复制到剪贴板";
+    copyQ.addEventListener("click", () => copyText(t.q, copyQ, qPre));
+
+    const copyA = document.createElement("button");
+    copyA.type = "button";
+    copyA.className = "ho-copy-btn ho-copy-a";
+    copyA.textContent = "复制回答";
+    copyA.__label = "复制回答";
+    copyA.title = "把这一轮的回答（Markdown 原文，含代码围栏）复制到剪贴板";
+    copyA.disabled = !answerMd;
+    if (!answerMd) copyA.title = "这条提问还没有回答";
+
+    actions.insertBefore(copyQ, jump);
+    actions.insertBefore(copyA, jump);
+
     qBox.appendChild(bar);
     qBox.appendChild(qPre);
     pane.appendChild(qBox);
+
+    // 回答区（复制回答失败时的选中兜底要用到它）
+    const answersBox = document.createElement("div");
+    answersBox.className = "ho-answers";
+
+    copyA.addEventListener("click", () => {
+      if (!answerMd) return;
+      copyText(answerMd, copyA, answersBox);
+    });
     if (q) MD.highlightIn(qBox, q);
 
     if (!t.answers.length) {
@@ -502,7 +542,7 @@
     const mark = document.createElement("div");
     mark.className = "ho-answer-anchor";
     mark.textContent = "回答 · " + t.answers.length + " 段";
-    pane.appendChild(mark);
+    answersBox.appendChild(mark);
 
     for (const answer of t.answers) {
       const wrap = document.createElement("div");
@@ -518,8 +558,9 @@
         wrap.appendChild(prose);
         if (q) MD.highlightIn(prose, q);
       }
-      pane.appendChild(wrap);
+      answersBox.appendChild(wrap);
     }
+    pane.appendChild(answersBox);
     pane.scrollTop = 0;
   }
 
@@ -663,17 +704,20 @@
     empty.hidden = shown > 0;
     count.textContent = q ? shown + ' / ' + panels.length + ' 条' : panels.length + ' 条';
   }
-  function copyText(text, btn) {
+  function copyText(text, btn, fallbackEl) {
+    var label = btn.getAttribute('data-label') || '复制';
     function flash(msg, ok) {
       btn.textContent = msg;
       btn.classList.toggle('ok', !!ok);
-      setTimeout(function () { btn.textContent = '复制'; btn.classList.remove('ok'); }, 1600);
+      setTimeout(function () { btn.textContent = label; btn.classList.remove('ok'); }, 1600);
     }
     function fallback() {
       try {
-        var pre = btn.closest('.ho-code').querySelector('pre');
+        var box = btn.closest('.ho-code');
+        var el = fallbackEl || (box && box.querySelector('pre'));
+        if (!el) { flash('复制失败', false); return; }
         var range = document.createRange();
-        range.selectNodeContents(pre);
+        range.selectNodeContents(el);
         var sel = window.getSelection();
         sel.removeAllRanges();
         sel.addRange(range);
@@ -693,6 +737,28 @@
       ev.stopPropagation();
       var pre = btn.closest('.ho-code').querySelector('pre');
       copyText(pre ? pre.innerText : '', btn);
+    });
+  });
+  // 复制提问 / 复制回答（答疑：回答复制的是 Markdown 原文，代码围栏与公式都保留）
+  [].forEach.call(document.querySelectorAll('.ho-copy-q'), function (btn) {
+    btn.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      var section = btn.closest('.ho-panel-data');
+      var pre = section && section.querySelector('.ho-question');
+      if (pre) copyText(pre.textContent, btn, pre);
+    });
+  });
+  [].forEach.call(document.querySelectorAll('.ho-copy-a'), function (btn) {
+    btn.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      var section = btn.closest('.ho-panel-data');
+      if (!section) return;
+      var tpl = section.querySelector('template.ho-src-a');
+      var text = tpl ? tpl.content.textContent : '';
+      if (!text) text = section.textContent;
+      copyText(text, btn, section.querySelector('.ho-msg') || section);
     });
   });
   [].forEach.call(document.querySelectorAll('.ho-jump-btn'), function (btn) {
@@ -742,16 +808,25 @@
       MD.escapeHtml(truncate(t.q.replace(/\s+/g, " "), 160)) + "</div>" +
       (t.answers.length > 1 ? '<span class="ho-badge">' + t.answers.length + " 段回答</span>" : "") +
       "</li>").join("\n");
-    const panels = state.turns.map((t, i) =>
-      '<section class="ho-panel-data" data-i="' + i + '"' + (i === 0 ? "" : " hidden") + ">" +
-      '<div class="ho-question-box"><div class="ho-question-bar">' +
-      '<span class="ho-question-label">提问 · 第 ' + (i + 1) + " 轮</span>" +
-      '<button type="button" class="ho-jump-btn">跳到回答 ↓</button></div>' +
-      '<pre class="ho-question">' + MD.escapeHtml(t.q) + "</pre></div>" +
-      (t.answers.length ? '<div class="ho-answer-anchor">回答 · ' + t.answers.length + " 段</div>" : "") +
-      (t.answers.length ? t.answers.map(answerHtml).map((h) => '<div class="ho-msg">' + h + "</div>").join("")
-        : '<div class="ho-empty">这条提问还没有回答。</div>') +
-      "</section>").join("\n");
+    const panels = state.turns.map((t, i) => {
+      const answerMd = copyableMd(t.answers.map((a) => a.text).filter((s) => s && s.trim()).join("\n\n"));
+      return '<section class="ho-panel-data" data-i="' + i + '"' + (i === 0 ? "" : " hidden") + ">" +
+        '<div class="ho-question-box"><div class="ho-question-bar">' +
+        '<span class="ho-question-label">提问 · 第 ' + (i + 1) + " 轮</span>" +
+        '<div class="ho-question-actions">' +
+        '<button type="button" class="ho-copy-btn ho-copy-q" data-label="复制提问">复制提问</button>' +
+        '<button type="button" class="ho-copy-btn ho-copy-a" data-label="复制回答"' +
+        (answerMd ? "" : " disabled") + ">复制回答</button>" +
+        '<button type="button" class="ho-jump-btn">跳到回答 ↓</button></div></div>' +
+        '<pre class="ho-question">' + MD.escapeHtml(t.q) + "</pre></div>" +
+        // 复制回答要用 Markdown 原文（保留代码围栏/公式），把它放进 <template>：
+        // template 的内容不会被渲染，textContent 还原出来就是原文。
+        '<template class="ho-src-a">' + MD.escapeHtml(answerMd) + "</template>" +
+        (t.answers.length ? '<div class="ho-answer-anchor">回答 · ' + t.answers.length + " 段</div>" : "") +
+        (t.answers.length ? t.answers.map(answerHtml).map((h) => '<div class="ho-msg">' + h + "</div>").join("")
+          : '<div class="ho-empty">这条提问还没有回答。</div>') +
+        "</section>";
+    }).join("\n");
 
     const doc = "<!doctype html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n" +
       '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +

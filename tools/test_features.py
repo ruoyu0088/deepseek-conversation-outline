@@ -99,6 +99,75 @@ def main() -> int:
                 if got.get("btnText") != "已复制":
                     problems.append("复制按钮没有把代码写进剪贴板")
 
+            # 复制提问 / 复制回答（同样必须真实鼠标点击）
+            def click_in_shadow(selector: str) -> bool:
+                pos = sess.eval("""
+                (() => {
+                  const sr = document.getElementById('ds-outline-host').shadowRoot;
+                  const el = sr.querySelector(%s);
+                  if (!el) return null;
+                  el.scrollIntoView({ block: 'center' });
+                  const r = el.getBoundingClientRect();
+                  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
+                           disabled: !!el.disabled };
+                })()
+                """ % json.dumps(selector))
+                if not pos or pos.get("disabled"):
+                    return False
+                for kind in ("mousePressed", "mouseReleased"):
+                    sess.send("Input.dispatchMouseEvent", {
+                        "type": kind, "x": pos["x"], "y": pos["y"], "button": "left", "clickCount": 1
+                    })
+                time.sleep(0.5)
+                return True
+
+            def read_clip() -> str:
+                return sess.eval("""
+                (async () => {
+                  try { return await navigator.clipboard.readText(); } catch (e) { return 'READ_ERR: ' + e; }
+                })()
+                """)
+
+            q_text = sess.eval("document.getElementById('ds-outline-host').shadowRoot.querySelector('.ho-question').textContent")
+            if not click_in_shadow(".ho-detail .ho-copy-q"):
+                problems.append("找不到「复制提问」按钮")
+            else:
+                clip = read_clip()
+                ok = str(clip).replace("\r\n", "\n").strip() == str(q_text).strip()
+                btn = sess.eval("document.getElementById('ds-outline-host').shadowRoot.querySelector('.ho-copy-q').textContent")
+                print("copy question:", json.dumps({"ok": ok, "btnText": btn, "len": len(str(clip)),
+                                                    "qLen": len(q_text)}, ensure_ascii=False))
+                if "READ_ERR" in str(clip):
+                    if btn != "已复制":
+                        problems.append("复制提问失败")
+                elif not ok:
+                    problems.append("复制提问的内容与提问不一致")
+
+            if not click_in_shadow(".ho-detail .ho-copy-a"):
+                problems.append("找不到「复制回答」按钮")
+            else:
+                clip = str(read_clip())
+                btn = sess.eval("document.getElementById('ds-outline-host').shadowRoot.querySelector('.ho-copy-a').textContent")
+                rendered = sess.eval("""
+                (() => {
+                  const sr = document.getElementById('ds-outline-host').shadowRoot;
+                  // 用直接子元素选择器：思考块的 .ho-prose 在 .ho-think 里，不能选到
+                  const p = sr.querySelector('.ho-detail .ho-msg > .ho-prose');
+                  return p ? p.textContent.trim().slice(0, 15) : '';
+                })()
+                """)
+                body = clip.replace("\r\n", "\n")
+                has_fence = "```" in body
+                head_ok = rendered and (body.lstrip("# \n").startswith(rendered[:10]) or rendered[:10] in body[:200])
+                print("copy answer:", json.dumps({"btnText": btn, "len": len(body), "fence": has_fence,
+                                                  "headOk": bool(head_ok),
+                                                  "head": body[:40]}, ensure_ascii=False))
+                if "READ_ERR" in body:
+                    if btn != "已复制":
+                        problems.append("复制回答失败")
+                elif len(body) < 100 or not head_ok:
+                    problems.append("复制回答的内容看起来不对")
+
             # 跳到回答
             jump = sess.eval(r"""
             (() => {
