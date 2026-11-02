@@ -1,0 +1,63 @@
+{
+  "manifest_version": 3,
+  "name": "DeepSeek 对话大纲",
+  "version": "0.1.0",
+  "description": "把当前 DeepSeek 对话的全部提问与回答做成可搜索的大纲，代码高亮+复制，可导出单文件 HTML；另把输入框改为 Enter 换行、Ctrl+Enter 发送。",
+  "content_scripts": [
+    {
+      "matches": ["https://chat.deepseek.com/*"],
+      "js": ["src/keymaps.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    },
+    {
+      "matches": ["https://chat.deepseek.com/*"],
+      "js": ["src/hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://chat.deepseek.com/*"],
+      "js": [
+        "vendor/katex/katex.min.js",
+        "vendor/prism-config.js",
+        "vendor/prism/prism-core.min.js",
+        "vendor/prism/prism-markup.min.js",
+        "vendor/prism/prism-css.min.js",
+        "vendor/prism/prism-clike.min.js",
+        "vendor/prism/prism-markup-templating.min.js",
+        "vendor/prism/prism-javascript.min.js",
+        "vendor/prism/prism-typescript.min.js",
+        "vendor/prism/prism-jsx.min.js",
+        "vendor/prism/prism-tsx.min.js",
+        "vendor/prism/prism-json.min.js",
+        "vendor/prism/prism-python.min.js",
+        "vendor/prism/prism-bash.min.js",
+        "vendor/prism/prism-sql.min.js",
+        "vendor/prism/prism-yaml.min.js",
+        "vendor/prism/prism-markdown.min.js",
+        "vendor/prism/prism-java.min.js",
+        "vendor/prism/prism-c.min.js",
+        "vendor/prism/prism-cpp.min.js",
+        "vendor/prism/prism-csharp.min.js",
+        "vendor/prism/prism-go.min.js",
+        "vendor/prism/prism-rust.min.js",
+        "vendor/prism/prism-ruby.min.js",
+        "vendor/prism/prism-php.min.js",
+        "vendor/prism/prism-kotlin.min.js",
+        "vendor/prism/prism-swift.min.js",
+        "vendor/prism/prism-r.min.js",
+        "vendor/prism/prism-diff.min.js",
+        "vendor/prism/prism-ini.min.js",
+        "vendor/prism/prism-powershell.min.js",
+        "vendor/prism/prism-lua.min.js",
+        "src/parse.js",
+        "src/markdown.js",
+        "src/styles.js",
+        "src/content.js"
+      ],
+      "run_at": "document_idle",
+      "world": "ISOLATED"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+# 本地抓包/验证产物（含真实对话内容，不进版本库）
+recon/raw-*.json
+recon/body-*.json
+recon/bodies-index.json
+recon/probe40.json
+recon/export-test.html
+recon/downloads/
+recon/*.png
+
+# Python
+__pycache__/
+*.pyc
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+desktop.ini
+Thumbs.db
