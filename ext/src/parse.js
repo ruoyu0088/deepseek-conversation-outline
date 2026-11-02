@@ -175,25 +175,5 @@
     return turns;
   }
 
-  /** 从 history_messages 的完整响应里取 biz_data（容错：code≠0 / 空 data）。 */
-  function bizData(payload) {
-    if (!payload) return null;
-    const data = payload.data || payload;
-    if (data && data.biz_data) return data.biz_data;
-    if (data && Array.isArray(data.chat_messages)) return data;   // 已经是 biz_data
-    return null;
-  }
-
-  /** 一次响应的摘要（给界面显示条数/标题用）。 */
-  function summarize(payload) {
-    const biz = bizData(payload) || {};
-    const session = biz.chat_session || {};
-    return {
-      sessionId: session.id || "",
-      title: typeof session.title === "string" ? session.title : "",
-      messages: Array.isArray(biz.chat_messages) ? biz.chat_messages : []
-    };
-  }
-
-  window.__dsParse = { decompose, searchableText, buildTurns, bizData, summarize };
+  window.__dsParse = { decompose, searchableText, buildTurns };
 })();

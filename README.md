@@ -4,6 +4,10 @@
 
 这个项目是 [`chatgpt-conversation-outline`](../chatgpt-conversation-outline) 的 DeepSeek 版本：界面、Markdown 渲染、代码高亮、公式、导出与键盘接管都沿用同一套实现，数据采集与解析按 DeepSeek 的接口重写。
 
+![深色主题](docs/screenshot-dark.png)
+
+![浅色主题 + 公式](docs/screenshot-light.png)
+
 ## 安装（一次性，只能手动点）
 
 1. Chrome 地址栏打开 `chrome://extensions`
