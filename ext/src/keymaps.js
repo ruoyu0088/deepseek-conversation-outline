@@ -118,9 +118,35 @@
     insertNewline(composer);
   };
 
+  const PANEL_KEY = "ds-outline:panel-open";
+
+  const panelOpen = () => {
+    try {
+      return window.localStorage.getItem(PANEL_KEY) === "1";
+    } catch (e) {
+      return false;
+    }
+  };
+
+  /** 面板打开时，Ctrl/Cmd+K 交给对话大纲（聚焦搜索框），并阻止 DeepSeek 自带的搜索。 */
+  const outlineShortcutHandler = (ev) => {
+    if (ev.isComposing) return;
+    if (!(ev.ctrlKey || ev.metaKey)) return;
+    if (String(ev.key).toLowerCase() !== "k") return;
+    if (!panelOpen()) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    ev.stopImmediatePropagation();
+    try {
+      window.postMessage({ __dsOutlineCmd: true, type: "focusSearch" }, "*");
+    } catch (e) { /* ignore */ }
+  };
+
   // window 捕获 + document 捕获都装：谁先到都拦得住，也不依赖注册顺序
   window.addEventListener("keydown", handler, true);
   document.addEventListener("keydown", handler, true);
+  window.addEventListener("keydown", outlineShortcutHandler, true);
+  document.addEventListener("keydown", outlineShortcutHandler, true);
 
   window.__dsKeymaps = { enabled, TOGGLE_KEY, sendButtonOf };
 })();

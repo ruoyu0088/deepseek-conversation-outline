@@ -179,6 +179,7 @@
   let ui = null;
 
   function mount() {
+    try { localStorage.setItem("ds-outline:panel-open", "0"); } catch (e) { /* ignore */ }
     const host = document.createElement("div");
     host.id = "ds-outline-host";
     host.style.cssText = "all:initial;";
@@ -275,10 +276,15 @@
       }
       if (ev.key === "Escape" && !ui.panel.hidden) close();
     }, true);
+    window.addEventListener("message", (ev) => {
+      const d = ev.data;
+      if (d && d.__dsOutlineCmd && d.type === "focusSearch") focusSearch();
+    });
   }
 
   function open() {
     ui.panel.hidden = false;
+    try { localStorage.setItem("ds-outline:panel-open", "1"); } catch (e) { /* ignore */ }
     ui.search.focus();
     const sessionId = sessionIdFromPath();
     if (sessionId !== state.sessionId) {
@@ -296,7 +302,10 @@
     requestHistory(state.sessionId);
   }
 
-  function close() { ui.panel.hidden = true; }
+  function close() {
+    ui.panel.hidden = true;
+    try { localStorage.setItem("ds-outline:panel-open", "0"); } catch (e) { /* ignore */ }
+  }
 
   function focusSearch() {
     if (!ui || ui.panel.hidden) return;
@@ -389,6 +398,22 @@
         if (state.query.trim()) focusMatch(0, true);
       });
       list.appendChild(li);
+    }
+    ensureActiveVisible();
+  }
+
+  function ensureActiveVisible() {
+    if (!ui || ui.panel.hidden) return;
+    const list = ui.list;
+    const active = list.querySelector(".ho-item.active");
+    if (!active) return;
+    const listRect = list.getBoundingClientRect();
+    const itemRect = active.getBoundingClientRect();
+    const pad = 8;
+    if (itemRect.top < listRect.top + pad) {
+      list.scrollTop += itemRect.top - listRect.top - pad;
+    } else if (itemRect.bottom > listRect.bottom - pad) {
+      list.scrollTop += itemRect.bottom - listRect.bottom + pad;
     }
   }
 
