@@ -66,6 +66,11 @@
   font-size: 15px; line-height: 1.7;
 }
 .ho-panel[hidden] { display: none; }
+.ho-panel.ho-max {
+  margin: 0; width: 100%; height: 100%;
+  border: 0; border-radius: 0;
+  box-shadow: none;
+}
 
 .ho-head {
   display: flex; align-items: center; gap: 10px;

@@ -177,6 +177,7 @@
 
   /* ------------------------------------------------------------------ UI */
   let ui = null;
+  let expanded = false;
 
   function mount() {
     try { localStorage.setItem("ds-outline:panel-open", "0"); } catch (e) { /* ignore */ }
@@ -223,6 +224,9 @@
       search: $(".ho-search"), count: $(".ho-count"), close: $(".ho-close"), download: $(".ho-download"),
       enterToggle: $(".ho-enter-toggle"), thinkToggle: $(".ho-think-toggle")
     };
+
+    try { expanded = localStorage.getItem("ds-outline:panel-expanded") === "1"; } catch (e) { expanded = false; }
+    ui.panel.classList.toggle("ho-max", expanded);
 
     // "Enter 换行"开关：真正的键盘接管在 src/keymaps.js（document_start 加载），
     // 这里只负责读写同一个 localStorage 开关。
@@ -278,7 +282,11 @@
     }, true);
     window.addEventListener("message", (ev) => {
       const d = ev.data;
-      if (d && d.__dsOutlineCmd && d.type === "focusSearch") focusSearch();
+      if (!d || !d.__dsOutlineCmd) return;
+      if (d.type === "focusSearch") focusSearch();
+      else if (d.type === "togglePanel") togglePanel();
+      else if (d.type === "expandPanel") { if (ui && !ui.panel.hidden) setExpanded(true); }
+      else if (d.type === "collapsePanel") { if (ui && !ui.panel.hidden) setExpanded(false); }
     });
   }
 
@@ -305,6 +313,18 @@
   function close() {
     ui.panel.hidden = true;
     try { localStorage.setItem("ds-outline:panel-open", "0"); } catch (e) { /* ignore */ }
+  }
+
+  function togglePanel() {
+    if (!ui) return;
+    if (ui.panel.hidden) open();
+    else close();
+  }
+
+  function setExpanded(on) {
+    expanded = !!on;
+    if (ui) ui.panel.classList.toggle("ho-max", expanded);
+    try { localStorage.setItem("ds-outline:panel-expanded", expanded ? "1" : "0"); } catch (e) { /* ignore */ }
   }
 
   function focusSearch() {

@@ -142,11 +142,33 @@
     } catch (e) { /* ignore */ }
   };
 
+  /** Alt+H：切换面板显示；Alt+Up：扩大；Alt+Down：恢复。仅面板已打开时才处理 Alt+Up/Down。 */
+  const outlineHotkeyHandler = (ev) => {
+    if (ev.isComposing) return;
+    if (!ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
+    const key = String(ev.key || "");
+    const lower = key.toLowerCase();
+    let type = "";
+    if (lower === "h") type = "togglePanel";
+    else if (key === "ArrowUp") type = "expandPanel";
+    else if (key === "ArrowDown") type = "collapsePanel";
+    if (!type) return;
+    if (type !== "togglePanel" && !panelOpen()) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    ev.stopImmediatePropagation();
+    try {
+      window.postMessage({ __dsOutlineCmd: true, type }, "*");
+    } catch (e) { /* ignore */ }
+  };
+
   // window 捕获 + document 捕获都装：谁先到都拦得住，也不依赖注册顺序
   window.addEventListener("keydown", handler, true);
   document.addEventListener("keydown", handler, true);
   window.addEventListener("keydown", outlineShortcutHandler, true);
   document.addEventListener("keydown", outlineShortcutHandler, true);
+  window.addEventListener("keydown", outlineHotkeyHandler, true);
+  document.addEventListener("keydown", outlineHotkeyHandler, true);
 
   window.__dsKeymaps = { enabled, TOGGLE_KEY, sendButtonOf };
 })();
