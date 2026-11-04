@@ -253,6 +253,12 @@
 .ho-prose img { max-width: 100%; border-radius: 8px; }
 .ho-prose hr { border: 0; border-top: 1px solid var(--ho-border); margin: 18px 0; }
 .ho-prose mark { background: var(--ho-mark-bg); color: var(--ho-mark-fg); border-radius: 2px; padding: 0 1px; }
+.ho-root mark.ho-hit-current {
+  background: #ff9f43;
+  color: #1a1a1a;
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px rgba(255,159,67,.35);
+}
 .ho-prose .ho-cite {
   display: inline-block; font-size: .72em; line-height: 1.5; vertical-align: baseline;
   color: var(--ho-fg-dim); border: 1px solid var(--ho-border); border-radius: 4px;

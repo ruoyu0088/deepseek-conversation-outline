@@ -406,6 +406,7 @@
           range.setStart(entry.node, from);
           range.setEnd(entry.node, to);
           const mark = document.createElement("mark");
+          mark.className = "ho-hit";
           range.surroundContents(mark);
           hits += 1;
         } catch (e) { /* 无法包裹的片段直接跳过，不影响其它命中 */ }

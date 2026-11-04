@@ -24,6 +24,8 @@
     visible: [],
     selected: 0,
     query: "",
+    currentMatch: 0,
+    matchMarks: [],
     includeThinking: true,  // 搜索是否覆盖"深度思考"
     loading: false,
     error: "",
@@ -195,7 +197,7 @@
       <div class="ho-panel" hidden>
         <div class="ho-head">
           <div class="ho-title">对话大纲 <span class="ho-count"></span></div>
-          <input class="ho-search" type="search" placeholder="搜索提问和回答…" autocomplete="off">
+          <input class="ho-search" type="search" placeholder="搜索提问和回答…（Ctrl+K 聚焦）" autocomplete="off" title="按 Ctrl+K 聚焦搜索并全选">
           <label class="ho-toggle" title="勾选后：Enter 换行，Ctrl+Enter 发送">
             <input type="checkbox" class="ho-enter-toggle"> Enter 换行
           </label>
@@ -248,11 +250,31 @@
       state.query = ui.search.value;
       renderList();
       renderDetail();
+      focusMatch(0, true);
+    });
+    ui.search.addEventListener("keydown", (ev) => {
+      if (ev.isComposing) return;
+      if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+        if (!state.query.trim()) return;
+        ev.preventDefault();
+        navigateMatch(ev.key === "ArrowDown" ? 1 : -1);
+        return;
+      }
+      if (ev.key === "PageDown" || ev.key === "PageUp") {
+        ev.preventDefault();
+        stepVisibleTurn(ev.key === "PageDown" ? 1 : -1, "first");
+      }
     });
     ui.panel.addEventListener("keydown", (ev) => { if (ev.key === "Escape") close(); });
     document.addEventListener("keydown", (ev) => {
+      if (!ui.panel.hidden && (ev.ctrlKey || ev.metaKey) && String(ev.key).toLowerCase() === "k") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        focusSearch();
+        return;
+      }
       if (ev.key === "Escape" && !ui.panel.hidden) close();
-    });
+    }, true);
   }
 
   function open() {
@@ -275,6 +297,13 @@
   }
 
   function close() { ui.panel.hidden = true; }
+
+  function focusSearch() {
+    if (!ui || ui.panel.hidden) return;
+    ui.search.focus();
+    ui.search.select();
+    try { ui.search.setSelectionRange(0, ui.search.value.length); } catch (e) { /* ignore */ }
+  }
 
   function requestHistory(sessionId) {
     state.loading = true;
@@ -357,9 +386,84 @@
         state.selected = row.i;
         renderList();
         renderDetail();
+        if (state.query.trim()) focusMatch(0, true);
       });
       list.appendChild(li);
     }
+  }
+
+  /* --------------------------------------------------------- 搜索匹配导航 */
+  function refreshMatches() {
+    if (!ui) return;
+    state.matchMarks = Array.from(ui.detail.querySelectorAll("mark.ho-hit"));
+    if (state.currentMatch >= state.matchMarks.length) {
+      state.currentMatch = Math.max(0, state.matchMarks.length - 1);
+    }
+  }
+
+  function setCurrentMatch(index, scroll) {
+    const marks = state.matchMarks;
+    if (!marks.length) { state.currentMatch = 0; return; }
+    const i = Math.max(0, Math.min(marks.length - 1, Number(index) || 0));
+    state.currentMatch = i;
+    marks.forEach((m, k) => m.classList.toggle("ho-hit-current", k === i));
+    if (scroll) scrollMatchIntoView(marks[i]);
+  }
+
+  function focusMatch(index, scroll) {
+    refreshMatches();
+    if (!state.matchMarks.length) return false;
+    setCurrentMatch(index, scroll);
+    return true;
+  }
+
+  function scrollMatchIntoView(mark) {
+    if (!mark || !ui) return;
+    const pane = ui.detail;
+    const paneRect = pane.getBoundingClientRect();
+    const markRect = mark.getBoundingClientRect();
+    const top = pane.scrollTop + (markRect.top - paneRect.top) - pane.clientHeight * 0.3;
+    try {
+      pane.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+    } catch (e) {
+      pane.scrollTop = Math.max(0, top);
+    }
+  }
+
+  function visiblePos() {
+    return state.visible.findIndex((r) => r.i === state.selected);
+  }
+
+  function stepVisibleTurn(delta, matchAt) {
+    if (!ui || ui.panel.hidden) return false;
+    const shown = state.visible;
+    if (!shown.length) return false;
+    let pos = visiblePos();
+    if (pos < 0) pos = 0;
+    const next = pos + delta;
+    if (next < 0 || next >= shown.length) return false;
+    state.selected = shown[next].i;
+    renderList();
+    renderDetail();
+    if (state.query.trim()) {
+      focusMatch(matchAt === "last" ? state.matchMarks.length - 1 : 0, true);
+    }
+    return true;
+  }
+
+  function navigateMatch(delta) {
+    if (!ui || ui.panel.hidden || !state.query.trim()) return;
+    refreshMatches();
+    if (!state.matchMarks.length) {
+      stepVisibleTurn(delta > 0 ? 1 : -1, delta > 0 ? "first" : "last");
+      return;
+    }
+    const next = state.currentMatch + delta;
+    if (next >= 0 && next < state.matchMarks.length) {
+      setCurrentMatch(next, true);
+      return;
+    }
+    stepVisibleTurn(delta > 0 ? 1 : -1, delta > 0 ? "first" : "last");
   }
 
   /* --------------------------------------------------------------- 右详情 */
@@ -421,7 +525,7 @@
   }
 
   /** 「深度思考」折叠块：默认收起，标题上显示字数与耗时。 */
-  function thinkingBlock(answer, expanded) {
+  function thinkingBlock(answer, expanded, q) {
     const box = document.createElement("div");
     box.className = "ho-think";
     const head = document.createElement("button");
@@ -462,6 +566,8 @@
     if (!ui) return;
     const pane = ui.detail;
     pane.textContent = "";
+    state.matchMarks = [];
+    state.currentMatch = 0;
     const t = state.turns[state.selected];
     if (!t) {
       const empty = document.createElement("div");
@@ -536,6 +642,8 @@
       empty.className = "ho-empty";
       empty.textContent = "这条提问还没有回答。";
       pane.appendChild(empty);
+      refreshMatches();
+      if (q && state.matchMarks.length) setCurrentMatch(0, false);
       return;
     }
 
@@ -551,7 +659,7 @@
         const thinkHits = qLower && state.includeThinking &&
           MD.countOccurrences(P.searchableText(answer.thinking).toLowerCase(), qLower);
         const expanded = !!(qLower && thinkHits);      // 搜到思考内容时自动展开，否则默认收起
-        wrap.appendChild(thinkingBlock(answer, expanded));
+        wrap.appendChild(thinkingBlock(answer, expanded, q));
       }
       if (answer.text) {
         const prose = proseOf(answer.text, answer.refs);
@@ -561,6 +669,8 @@
       answersBox.appendChild(wrap);
     }
     pane.appendChild(answersBox);
+    refreshMatches();
+    if (q && state.matchMarks.length) setCurrentMatch(0, false);
     pane.scrollTop = 0;
   }
 
