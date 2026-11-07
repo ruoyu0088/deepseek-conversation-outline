@@ -7,6 +7,7 @@ recon/export-test.html
 recon/downloads/
 recon/downloads2/
 recon/*.png
+recon/commit-msg.txt
 
 # Python
 __pycache__/

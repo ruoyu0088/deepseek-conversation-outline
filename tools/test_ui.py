@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
 import sys
@@ -23,27 +24,34 @@ import harness as H  # noqa: E402
 DEFAULT_SESSION = "2c9ce637-29ad-43a8-ba4f-3e28973db6ae"   # 154 条消息 / 77 轮
 
 
-def capture_export(sess) -> str:
-    """拦下 createObjectURL，拿到导出的 HTML 文本（不落盘、不触发真实下载）。"""
-    sess.eval(r"""
-    (() => {
-      window.__dsLastBlob = null;
-      const origCreate = URL.createObjectURL;
-      URL.createObjectURL = function (blob) { window.__dsLastBlob = blob; return origCreate.call(URL, blob); };
-      const origClick = HTMLAnchorElement.prototype.click;
-      HTMLAnchorElement.prototype.click = function () { if (this.download) { window.__dsDownloadName = this.download; return; } return origClick.apply(this, arguments); };
-    })()
-    """)
+def capture_export(sess) -> dict:
+    """真实点一次「下载 HTML」，把落盘的文件读回来。
+
+    早先的写法是拦 URL.createObjectURL —— 但导出跑在 content script 的隔离世界里，
+    主世界打的补丁看不到它，patch 永远抓不到 blob（会误报 export FAILED）。
+    这里改用 Browser.setDownloadBehavior 指定下载目录，稳且顺带验证了真实下载路径。
+    """
+    out_dir = os.path.join(ROOT, "recon", "downloads")
+    if os.path.isdir(out_dir):
+        for f in glob.glob(os.path.join(out_dir, "*")):
+            os.remove(f)
+    os.makedirs(out_dir, exist_ok=True)
+    sess.send("Browser.setDownloadBehavior",
+              {"behavior": "allow", "downloadPath": out_dir, "eventsEnabled": True}, timeout=10)
     sess.eval("document.getElementById('ds-outline-host').shadowRoot.querySelector('.ho-download').click()")
-    time.sleep(0.4)
-    return sess.eval(r"""
-    (async () => {
-      const b = window.__dsLastBlob;
-      if (!b) return { ok: false };
-      const text = await b.text();
-      return { ok: true, name: window.__dsDownloadName, size: text.length, text };
-    })()
-    """)
+    files = []
+    for _ in range(60):
+        time.sleep(0.5)
+        files = [f for f in glob.glob(os.path.join(out_dir, "*")) if not f.endswith(".crdownload")]
+        if files:
+            time.sleep(1.0)
+            break
+    if not files:
+        return {"ok": False}
+    path = files[0]
+    with open(path, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    return {"ok": True, "name": os.path.basename(path), "size": len(text), "text": text}
 
 
 def main() -> int:
