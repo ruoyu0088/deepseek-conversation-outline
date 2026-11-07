@@ -124,7 +124,8 @@ $PY = "C:\pixi_env\.pixi\envs\default\python.exe"
 $env:MKL_THREADING_LAYER = "TBB"
 
 & $PY tools/launch_debug.py --url "https://chat.deepseek.com/"   # 起调试 Chrome + 加载扩展
-& $PY tools/reload.py 9222                                        # 改了源码后：刷新页面并确认扩展还挂着
+& $PY tools/reload_ext.py 9222                                    # 改了 ext/ 源码后：重新 loadUnpacked + 刷新（必须，光刷页面不会加载新代码）
+& $PY tools/reload.py 9222                                        # 只刷新页面并确认扩展还挂着
 & $PY tools/recon_deepseek.py 9222 --status                       # 看当前页面/登录态/会话链接
 & $PY tools/recon_deepseek.py 9222 --capture                      # 抓页面自己的请求到 recon/
 & $PY tools/probe_api.py 9222 --limit 8                           # 会话接口探针（消息数/fragment 类型）
@@ -135,6 +136,7 @@ $env:MKL_THREADING_LAYER = "TBB"
 & $PY tools/test_render.py 9222 <sessionId>                       # 逐轮渲染统计（代码/公式/表格）
 & $PY tools/test_attach.py 9222                                   # 附件：点文件名 → 取正文 → 再点收起
 & $PY tools/test_attach_export.py                                 # 附件：两个附件都能读 + 读过的正文进导出文件
+& $PY tools/probe_ty.py 9222                                      # 附件接口：地址补 ty=r、坏域名/空地址的拒绝路径
 & $PY tools/check_export.py 9222 recon/export-test.html --search Pyodide   # 导出文件体检
 & $PY tools/shot_panel.py 9222 recon/shot.png --select 3           # 截图
 & $PY tools/shot_attach.py 9222 recon/shot.png --select 18         # 截图：带附件的一轮（附件已展开）

@@ -215,12 +215,18 @@
     if (u.hostname !== "files.deepseeksvc.com" || !/\/api\/file$/.test(u.pathname)) {
       throw new Error("不允许的附件地址");
     }
+    // 实测：少了 ty=r 这个参数，服务端直接拒绝（浏览器里表现为 TypeError: Failed to fetch）。
+    // 页面自己请求附件时都会带，但我们从签名路径 / DOM 里拼出来的可能没有，这里兜一层。
+    if (!/[?&]ty=/.test(u.search)) u.searchParams.set("ty", "r");
     const resp = await origFetch(u.toString(), {
       credentials: "omit",
       method: "GET",
       headers: { accept: "*/*" }
     });
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    if (!resp.ok) {
+      // 403 多半是 signed_path 里的 state 签名过期，重新打开会话能拿到新路径
+      throw new Error("HTTP " + resp.status + (resp.status === 403 ? "（附件签名可能已过期，重新打开这个会话再试）" : ""));
+    }
     const ct = (resp.headers.get("content-type") || "").toLowerCase();
     if (ct.indexOf("image/") === 0) {
       return { kind: "image", url: u.toString(), contentType: ct };
