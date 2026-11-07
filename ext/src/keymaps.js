@@ -162,6 +162,79 @@
     } catch (e) { /* ignore */ }
   };
 
+  /** 找到聊天输入框：优先找同一容器里有发送按钮的那个 textarea。 */
+  const findComposer = () => {
+    const textareas = document.querySelectorAll("textarea");
+    for (const ta of textareas) {
+      if (ta.readOnly || ta.disabled) continue;
+      if (sendButtonOf(ta)) return ta;
+    }
+    for (const ta of textareas) {
+      if (ta.readOnly || ta.disabled) continue;
+      if (ta.offsetParent !== null) return ta;
+    }
+    return null;
+  };
+
+  /** Ctrl+/：把焦点移到聊天输入框，光标放到末尾。 */
+  const focusComposer = () => {
+    const ta = findComposer();
+    if (!ta) return false;
+    try {
+      ta.focus();
+      const len = ta.value.length;
+      ta.setSelectionRange(len, len);
+    } catch (e) { /* ignore */ }
+    return true;
+  };
+
+  /** Ctrl+Alt+U：打开上传文件对话框。
+   *  优先触发聊天输入区附近的隐藏 <input type="file">；找不到再按 aria-label/title 找上传按钮。 */
+  const openUploadDialog = () => {
+    const composer = findComposer();
+    let inputs = Array.from(document.querySelectorAll('input[type="file"]')).filter((i) => !i.disabled);
+    if (inputs.length) {
+      if (composer) {
+        let el = composer;
+        for (let i = 0; i < 8 && el; i += 1) {
+          const found = inputs.filter((inp) => el.contains(inp));
+          if (found.length) { inputs = found; break; }
+          el = el.parentElement;
+        }
+      }
+      try { inputs[0].click(); return true; } catch (e) { /* 走下面的兜底 */ }
+    }
+    const keywords = /上传|附件|文件|attach|upload|file/i;
+    const candidates = document.querySelectorAll('[role="button"], button');
+    for (const btn of candidates) {
+      const label = (btn.getAttribute("aria-label") || "") + " " +
+        (btn.getAttribute("title") || "") + " " + (btn.textContent || "");
+      if (!keywords.test(label)) continue;
+      if (/发送|send/i.test(label)) continue;
+      try { btn.click(); return true; } catch (e) { /* ignore */ }
+    }
+    return false;
+  };
+
+  /** Ctrl+/ 聚焦输入框；Ctrl+Alt+U 打开上传文件对话框。 */
+  const composerShortcutHandler = (ev) => {
+    if (ev.isComposing) return;
+    if (ev.key === "/" || ev.code === "Slash") {
+      if (!(ev.ctrlKey || ev.metaKey) || ev.altKey || ev.shiftKey) return;
+      if (!focusComposer()) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
+      return;
+    }
+    if (ev.ctrlKey && ev.altKey && !ev.shiftKey && String(ev.key).toLowerCase() === "u") {
+      if (!openUploadDialog()) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
+    }
+  };
+
   // window 捕获 + document 捕获都装：谁先到都拦得住，也不依赖注册顺序
   window.addEventListener("keydown", handler, true);
   document.addEventListener("keydown", handler, true);
@@ -169,6 +242,8 @@
   document.addEventListener("keydown", outlineShortcutHandler, true);
   window.addEventListener("keydown", outlineHotkeyHandler, true);
   document.addEventListener("keydown", outlineHotkeyHandler, true);
+  window.addEventListener("keydown", composerShortcutHandler, true);
+  document.addEventListener("keydown", composerShortcutHandler, true);
 
   window.__dsKeymaps = { enabled, TOGGLE_KEY, sendButtonOf };
 })();
