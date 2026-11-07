@@ -27,6 +27,7 @@
 - **深度思考默认折叠**：每条回答上方有一条「深度思考 · N 字 · 用时 N 秒」的条，点一下展开/收起。
 - **代码块带语法高亮**（关键字/字符串/数字/注释/运算符等着色），左上角显示语言名，右上角有**复制按钮**（点一下复制整段代码，按钮会短暂显示"已复制"）。
 - **联网检索的来源角标**：回答正文里的 `[reference:N]` 会渲染成可点的小圆标（①②③…），悬停显示来源标题，点击在新标签打开原网页。
+- **提问带的附件**：提问框下面会列出附件的**文件名（虚线框按钮）**，点一下就在原地展开只读文本框显示文件内容（几百 KB 的文本也直接显示，读完缓存在内存里，再点只做展开/收起）；图片附件直接显示图片，点提示行可在新标签打开原图。附件正文不在会话 JSON 里，是点开时才用消息里的签名地址去取的（见"工作原理"）。
 - 上方搜索框：**同时搜提问和回答**；没命中的条目整条隐藏；命中的词在左右两侧都高亮；如果只有回答命中，该提问下方会显示"回答中命中 N 处"。
 - **「搜索含思考」勾选框**（默认勾选）：控制搜索是否也匹配「深度思考」里的内容。勾选时，只有思考命中的条目也会显示"思考中命中 N 处"，并自动展开对应的思考块。
 - **下载 HTML**：把整个对话导出成一个单文件 HTML（自带样式与高亮，离线打开后搜索框、复制按钮、折叠块都能用）。
@@ -64,6 +65,16 @@
      `TOOL_SEARCH`/`TOOL_OPEN`（联网检索过程）、`TIP`（"AI 生成"免责声明）、`FILE`（附件）。
      面板只显示 REQUEST / THINK / RESPONSE / FILE，TIP 与 TOOL_* 跳过。
    - `RESPONSE.references[]` 是 `{id,type}`，id 能对到同一条消息里的 `TOOL_OPEN.result.url` —— 这就是来源角标的数据来源。
+   - `FILE.files[]` 每项是 `{id:"file-<uuid>", file_name, file_size, is_image, signed_path, ...}`，**只有签名路径，没有正文**。正文要单独取：
+
+     ```
+     GET https://files.deepseeksvc.com/api + signed_path + "&ty=r"
+     credentials: "omit"        // 带 cookie 会被 CORS 拒（ACAO 是 *）
+     ```
+
+     `ty=r` 是必须的：不带它这个地址直接 `Failed to fetch`；带上就返回文件正文（`content-type` 常是 `application/octet-stream`）。
+     签名（`state` 参数）本身就在 `signed_path` 里，不需要 `Authorization`。请求由主世界的 `hook.js` 代发（`fetchFile` 消息），
+     只允许 `files.deepseeksvc.com/api/file` 这个域名+路径，避免被当成任意 URL 的代理。
 
 4. **整理成轮次**（`src/parse.js`）：按 `message_id` 排序，只接受 `USER`/`ASSISTANT`，每条用户消息开启一轮，其后的助手消息都算这一轮的回答（编辑/重新生成会产生多段回答，面板显示"N 段回答"）。用户消息只带附件时显示为 `[附件] 文件名`（图片为 `[图片]`）。
 5. **渲染**（`src/markdown.js` + `vendor/prism/`）：自带轻量 Markdown → HTML，随后用 DOMParser 做白名单消毒；代码块用**打包在本地的 Prism** 高亮（31 个语言文件）；公式用**打包在本地的 KaTeX** 输出 MathML，由 Chrome 原生排版（不需要字体，导出的单文件也能离线看）。MV3 不允许加载远程脚本，所以库全部离线打包。
@@ -97,9 +108,10 @@ recon/                   抓包样本与验证产物（本地文件，不进版�
 - **Enter 接管**：依赖 DeepSeek 当前的输入框结构（聊天输入框是 `textarea`，同一容器里有 `div[role="button"].ds-button--primary` 作发送按钮）。DeepSeek 大改版后如果失效，改 `ext/src/keymaps.js` 里的选择器即可。
 - **换行的实现**：DeepSeek 的输入框是 React 受控 `<textarea>`，所以换行是"改原型 value setter + 派发 input 事件"。`document.execCommand('insertText')` 虽然能改 DOM，但进不了 React 状态（实测发送出去的正文里没有换行），所以只作为兜底。
 - **思维链**：默认折叠；导出页里用原生 `<details>` 折叠。搜索时是否匹配由「搜索含思考」开关控制（存在 `ds-outline:search-thinking`）。
+- **附件正文**：只有"在网页端点开过"的附件，导出 HTML 里才有正文（导出是离线的，`file://` 页面请求签名地址会被 CORS 拦掉，实测报 `TypeError: Failed to fetch`，`Origin` 是 `null`）。没点开过的附件在导出页里保留文件名、大小和原始地址，展开后是一段说明文字。另外 `signed_path` 里的 `state` 是签名，实测隔 4 天仍能读（不是一次性 URL），但不是永久——如果哪天点附件报 `HTTP 403`，重新打开一次会话页面拿新的签名路径即可。
 - **来源角标**：只支持正文里的 `[reference:N]`；`TOOL_SEARCH` 类引用（没有具体 URL 的）只显示编号，不可点。
 - **公式**：支持 `\(…\)`、`$…$`（行内）与 `$$…$$`、`\[…\]`（块级）。DeepSeek 实测主要用 `\(…\)`。渲染不了的写法会退回原始文本（灰字），不会报错。公式内部不参与搜索高亮，但搜索索引仍用原始 LaTeX 文本。
-- **附件**：只显示文件名占位，不下载附件本体。
+- **附件**：只认 `FILE` fragment 里的文件项；附件正文按需请求（签名地址），没有 `signed_path` 的旧数据只能显示文件名。扫描版 PDF、Word 之类的二进制附件按 UTF-8 当文本读，能看到的内容就是乱码——这类文件本来就该下载下来看。
 - **对话分支**：编辑/重新生成产生的所有消息都会进同一个轮次，所以一轮下可能出现多段回答。
 - **需要联网**：面板打开时会请求一次历史数据；离线时只能看到已经截获到的部分。
 
@@ -121,8 +133,11 @@ $env:MKL_THREADING_LAYER = "TBB"
 & $PY tools/test_key.py 9222                                      # Enter 换行、Ctrl+Enter 发送、开关
 & $PY tools/test_features.py 9222                                 # 复制按钮、跳到回答、搜索高亮
 & $PY tools/test_render.py 9222 <sessionId>                       # 逐轮渲染统计（代码/公式/表格）
+& $PY tools/test_attach.py 9222                                   # 附件：点文件名 → 取正文 → 再点收起
+& $PY tools/test_attach_export.py                                 # 附件：两个附件都能读 + 读过的正文进导出文件
 & $PY tools/check_export.py 9222 recon/export-test.html --search Pyodide   # 导出文件体检
 & $PY tools/shot_panel.py 9222 recon/shot.png --select 3           # 截图
+& $PY tools/shot_attach.py 9222 recon/shot.png --select 18         # 截图：带附件的一轮（附件已展开）
 ```
 
 ### 测试的安全网（重要）
@@ -147,3 +162,11 @@ $env:MKL_THREADING_LAYER = "TBB"
 - **导出页**（`file://` 打开）：搜 `Pyodide` → 33/77 条、236 处高亮、19 个思考块自动展开；点条目后页面回到顶部、对应 panel 显示；清空搜索后折叠块全部收起。
 - **SPA 切换**：面板开着时点侧边栏另一个会话，面板会自动取回新对话（`/` → `/a/chat/s/68d0…`，0 条 → 1 条）。
 - **浅色主题**：DeepSeek 切到 light 后页面底色 `rgb(255,255,255)`，面板自动加 `.ho-light`，对比度正常。
+
+### 已验证（2026-11-07，Chrome 157）：附件正文
+
+- 地址拼法（`recon/probe_file_url.js`）：`https://files.deepseeksvc.com/api` + `signed_path` → `TypeError: Failed to fetch`；再追加 `&ty=r` → `200`、398,179 字符正文；`credentials:"include"` → 同样 `Failed to fetch`（`ACAO` 是 `*`，不能带 cookie）。
+- 对话「打包HTML运行Python可行」第 19 轮 `bundle.txt`（403 KB）：点文件名后文本框 389,733 字符，开头是 `PROJECT BUNDLE: pycalc-main`；再点收起、第三次展开用缓存、内容不丢。第 54 轮 `right {.txt`（2 KB）同样能读（2,288 字符）。
+- 导出：先点开 `bundle.txt` 再导出 → 生成的 HTML 里能搜到附件正文（`===== FILE TREE =====` 起的文件树），文件 2,331,288 字节；没点开过的附件保留文件名 + 大小 + 原始地址 + 说明文字。
+- `file://` 页面直连签名地址 → `Failed to fetch`（`Origin: null` 被 CORS 拦），所以导出页只能带"已经读过"的正文。
+- 回归：`tools/test_real.py` / `test_ui.py`（含真实下载导出 1,888,004 字节）/ `test_features.py` / `test_key.py` / `check_export.py` 全过。

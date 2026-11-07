@@ -5,6 +5,7 @@ recon/bodies-index.json
 recon/probe40.json
 recon/export-test.html
 recon/downloads/
+recon/downloads2/
 recon/*.png
 
 # Python

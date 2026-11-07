@@ -32,6 +32,30 @@
     pending: null
   };
 
+  /** 附件内容缓存：key 为 fileId（优先）或完整 URL 或文件名。 */
+  const fileCache = new Map();
+  /** 正在进行的附件请求：requestId -> {resolve, reject, timer}。 */
+  const filePending = new Map();
+  /** 页面自己请求过的附件 URL：fileId -> 带签名的完整 URL。 */
+  const fileUrlCache = new Map();
+  let fileReqSeq = 0;
+
+  /** 通过 MAIN-world 的 hook 请求附件内容（避开隔离世界的跨域限制）。 */
+  function requestFileContent(opt) {
+    return new Promise((resolve, reject) => {
+      const requestId = "f" + (++fileReqSeq).toString(36) + Math.random().toString(36).slice(2);
+      const timer = setTimeout(() => {
+        filePending.delete(requestId);
+        reject(new Error("请求超时"));
+      }, 30000);
+      filePending.set(requestId, { resolve, reject, timer });
+      window.postMessage({
+        __dsOutlineReq: true, action: "fetchFile",
+        requestId, url: opt && opt.url, fileId: opt && opt.fileId
+      }, "*");
+    });
+  }
+
   const sessionIdFromPath = () => {
     const m = /^\/a\/chat\/s\/([0-9a-fA-F-]{36})/.exec(location.pathname);
     return m ? m[1] : null;
@@ -41,6 +65,14 @@
 
   /** 复制用的 Markdown：去掉联网检索的 `[reference:N]` 角标（那是渲染用的记号，纯文本里只是噪音）。 */
   const copyableMd = (s) => String(s == null ? "" : s).replace(/\[reference:\d+\]/g, "").replace(/[ \t]+$/gm, "");
+
+  /** 提问框里显示的文字。带附件的提问：消息里的 "[附件] xxx" 行不重复显示（附件有单独的可点文件名），
+   *  只有附件没有文字时返回空串（面板里连框一起隐藏）。 */
+  const qTextOf = (t) => {
+    const qt = t.qText != null ? t.qText : "";
+    if (qt) return qt;
+    return t.attachments && t.attachments.length ? "" : t.q;
+  };
 
   /* ------------------------------------------------------------ 代码高亮 */
   const PRISM = window.Prism;
@@ -373,7 +405,9 @@
     list.textContent = "";
 
     const shown = rows.filter((r) => r.visible);
-    ui.count.textContent = state.loading
+    // 页面自己的 history 请求可能比我们的先到：已经有数据就直接显示条数，别一直挂着"读取中…"
+    const loading = state.loading && !state.turns.length;
+    ui.count.textContent = loading
       ? "读取中…"
       : (q ? shown.length + " / " + state.turns.length + " 条" : state.turns.length + " 条");
 
@@ -569,6 +603,137 @@
     return prose;
   }
 
+  /** 从页面 DOM 找一个附件的下载地址（页面渲染附件时可能带 /api/file 链接）。 */
+  function findAttachmentUrlInPage(name) {
+    const nodes = document.querySelectorAll('a[href*="/api/file"], img[src*="/api/file"]');
+    if (!nodes.length) return "";
+    for (const el of nodes) {
+      const url = el.getAttribute("href") || el.getAttribute("src") || "";
+      if (!url) continue;
+      const label = (el.getAttribute("download") || el.getAttribute("alt") || el.textContent || "").trim();
+      if (name && label && (label === name || label.indexOf(name) >= 0)) return url;
+    }
+    if (nodes.length === 1) {
+      const el = nodes[0];
+      return el.getAttribute("href") || el.getAttribute("src") || "";
+    }
+    return "";
+  }
+
+  /** 一个附件的 UI：文件名按钮 + 隐藏的只读 textarea。
+   *  点击时按需请求内容：消息里带正文就直接用，否则依次尝试
+   *  a.url → fileUrlCache（页面请求过的 URL）→ 页面 DOM 中的 /api/file 链接 → hook 代为请求。
+   *  全都拿不到就显示明确错误，不伪造数据。 */
+  function attachmentRow(a) {
+    const row = document.createElement("div");
+    row.className = "ho-attach";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ho-attach-name";
+    btn.textContent = a.isImage ? "[图片] " + (a.name || "") : (a.name || "[附件]");
+    const sizeText = a.size ? (a.size >= 1024 * 1024 ? (a.size / 1048576).toFixed(1) + " MB" : Math.round(a.size / 1024) + " KB") : "";
+    btn.title = "点击查看附件内容" + (sizeText ? " · " + sizeText : "");
+    const view = document.createElement("div");
+    view.className = "ho-attach-viewer";
+    view.hidden = true;
+    const ta = document.createElement("textarea");
+    ta.readOnly = true;
+    ta.className = "ho-attach-text";
+    const img = document.createElement("img");
+    img.className = "ho-attach-img";
+    img.alt = a.name || "附件图片";
+    img.hidden = true;
+    const hint = document.createElement("div");
+    hint.className = "ho-attach-hint";
+    hint.hidden = true;
+    let loaded = false;
+    let loading = false;
+
+    const showHint = (msg) => {
+      hint.hidden = false;
+      hint.textContent = msg;
+    };
+
+    const showImage = (url) => {
+      ta.hidden = true;
+      img.hidden = false;
+      img.src = url;
+      img.onerror = () => {
+        img.hidden = true;
+        showHint("图片没能加载，地址：" + url);
+      };
+      showHint("图片附件" + (sizeText ? "（" + sizeText + "）" : "") + " · 点这里在新标签打开");
+      hint.hidden = false;
+      hint.onclick = () => window.open(url, "_blank", "noopener");
+    };
+
+    const fill = (res) => {
+      if (res.kind === "image") {
+        showImage(res.url || a.url || "");
+        return;
+      }
+      ta.hidden = false;
+      ta.value = res.text || "";
+      // 长附件直接给个高的框，省得手动拖
+      ta.style.height = (ta.value.length > 4000 ? "45vh" : "");
+      a.text = ta.value;          // 记住内容：再次展开不用再请求，导出时也能带上
+      loaded = true;
+      hint.hidden = true;
+    };
+
+    btn.addEventListener("click", async () => {
+      view.hidden = !view.hidden;
+      if (view.hidden || loaded || loading) return;
+
+      // 1) 消息里直接带正文（或这次会话里已经读过，缓存在 a.text）
+      if (a.text) {
+        ta.hidden = false;
+        ta.value = a.text;
+        ta.style.height = (a.text.length > 4000 ? "45vh" : "");
+        hint.hidden = true;
+        loaded = true;
+        return;
+      }
+
+      // 2) 图片：直接把签名地址交给 <img>，不用为了看 content-type 先抓一遍
+      if (a.isImage && a.url) {
+        showImage(a.url);
+        loaded = true;
+        return;
+      }
+
+      loading = true;
+      btn.disabled = true;
+      showHint("正在读取附件内容…");
+      ta.hidden = true;
+      img.hidden = true;
+      try {
+        const url = a.url || (a.fileId && fileUrlCache.get(a.fileId)) || findAttachmentUrlInPage(a.name) || "";
+        const key = a.fileId || url || a.name;
+        let res = fileCache.get(key);
+        if (!res) {
+          res = await requestFileContent({ url, fileId: a.fileId });
+          fileCache.set(key, res);
+        }
+        fill(res);
+        loaded = true;
+      } catch (err) {
+        ta.hidden = true;
+        img.hidden = true;
+        showHint("读取附件失败：" + String((err && err.message) || err));
+      } finally {
+        loading = false;
+        btn.disabled = false;
+      }
+    });
+    view.appendChild(hint);
+    view.appendChild(img);
+    view.appendChild(ta);
+    row.appendChild(btn);
+    row.appendChild(view);
+    return row;
+  }
+
   /** 「深度思考」折叠块：默认收起，标题上显示字数与耗时。 */
   function thinkingBlock(answer, expanded, q) {
     const box = document.createElement("div");
@@ -646,7 +811,8 @@
     bar.appendChild(actions);
     const qPre = document.createElement("pre");
     qPre.className = "ho-question";
-    qPre.textContent = t.q;
+    qPre.textContent = qTextOf(t);
+    if (!qPre.textContent) qPre.hidden = true;   // 只有附件、没有文字时不留空框
 
     const copyQ = document.createElement("button");
     copyQ.type = "button";
@@ -671,6 +837,14 @@
     qBox.appendChild(bar);
     qBox.appendChild(qPre);
     pane.appendChild(qBox);
+
+    // 附件区：文件名可点击，展开后用一个只读 textarea 显示内容
+    if (t.attachments && t.attachments.length) {
+      const attachBox = document.createElement("div");
+      attachBox.className = "ho-attachments";
+      for (const a of t.attachments) attachBox.appendChild(attachmentRow(a));
+      pane.appendChild(attachBox);
+    }
 
     // 回答区（复制回答失败时的选中兜底要用到它）
     const answersBox = document.createElement("div");
@@ -774,6 +948,24 @@
       html += holder.outerHTML;
     }
     return html;
+  }
+
+  /** 导出用：把一轮提问的附件渲染成可点击展开的 <details>。
+   *  正文只有在网页端点开过这个附件时才有（离线 HTML 里没法再请求签名地址）。 */
+  function attachHtmlOf(t) {
+    if (!t.attachments || !t.attachments.length) return "";
+    const rows = t.attachments.map((a) => {
+      const name = MD.escapeHtml(a.isImage ? "[图片] " + (a.name || "") : (a.name || "[附件]"));
+      const size = a.size ? (a.size >= 1048576 ? (a.size / 1048576).toFixed(1) + " MB" : Math.round(a.size / 1024) + " KB") : "";
+      const content = a.text
+        ? MD.escapeHtml(a.text)
+        : "（这个附件在导出时还没有读取过正文。附件正文要靠签名地址单独请求，离线 HTML 里拿不到；" +
+          "在网页端点开一次文件名再导出，正文就会带进来。原始地址：" + (a.url || "—") + "）";
+      return '<details class="ho-attach"><summary class="ho-attach-name">' + name +
+        (size ? ' <span class="ho-attach-size">' + size + "</span>" : "") + "</summary>" +
+        '<textarea readonly class="ho-attach-text">' + content + "</textarea></details>";
+    }).join("");
+    return '<div class="ho-attachments">' + rows + "</div>";
   }
 
   const EXPORT_SCRIPT = `
@@ -973,7 +1165,9 @@
         '<button type="button" class="ho-copy-btn ho-copy-a" data-label="复制回答"' +
         (answerMd ? "" : " disabled") + ">复制回答</button>" +
         '<button type="button" class="ho-jump-btn">跳到回答 ↓</button></div></div>' +
-        '<pre class="ho-question">' + MD.escapeHtml(t.q) + "</pre></div>" +
+        '<pre class="ho-question"' + (qTextOf(t) ? "" : ' style="display:none"') + ">" +
+        MD.escapeHtml(qTextOf(t)) + "</pre></div>" +
+        attachHtmlOf(t) +
         // 复制回答要用 Markdown 原文（保留代码围栏/公式），把它放进 <template>：
         // template 的内容不会被渲染，textContent 还原出来就是原文。
         '<template class="ho-src-a">' + MD.escapeHtml(answerMd) + "</template>" +
@@ -1018,6 +1212,18 @@
         state.error = "读取对话数据失败：" + (d.error || "未知错误");
       }
       if (ui && !ui.panel.hidden && d.sessionId === state.sessionId) renderAll();
+    }
+    if (d.type === "file") {
+      const p = filePending.get(d.requestId);
+      if (!p) return;
+      filePending.delete(d.requestId);
+      clearTimeout(p.timer);
+      if (d.ok) p.resolve(d);
+      else p.reject(new Error(d.error || "读取附件失败"));
+      return;
+    }
+    if (d.type === "fileurl" && d.fileId && d.url) {
+      fileUrlCache.set(d.fileId, d.url);
     }
   });
 

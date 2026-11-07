@@ -24,6 +24,25 @@
   const HISTORY_API = /\/api\/v0\/chat\/history_messages(?:[?#]|$)/;
   const MAX_MESSAGES = 4000;
 
+  /** 附件文件接口：只允许这个域名上的 /api/file，避免被用来请求任意 URL。 */
+  const FILE_API = /^https?:\/\/files\.deepseeksvc\.com\/api\/file(?:[?#]|$)/i;
+  /** 页面自己请求过的附件 URL（file_id -> 带签名的完整 URL），供面板复用。 */
+  const fileUrlById = new Map();
+
+  const rememberFileUrl = (rawUrl) => {
+    try {
+      const u = new URL(rawUrl, location.href);
+      if (u.hostname !== "files.deepseeksvc.com") return;
+      if (!/\/api\/file$/.test(u.pathname)) return;
+      const id = u.searchParams.get("file_id");
+      if (!id) return;
+      const full = u.toString();
+      if (fileUrlById.get(id) === full) return;
+      fileUrlById.set(id, full);
+      post("fileurl", { fileId: id, url: full });
+    } catch (e) { /* ignore */ }
+  };
+
   /** 前端最近一次用过的请求头（小写键名）。 */
   let lastAuthHeaders = null;
 
@@ -98,6 +117,7 @@
         url = typeof input === "string" ? input : (input && input.url) || "";
         isHistory = HISTORY_API.test(url);
         if (isHistory) rememberAuth((init && init.headers) || (input && input.headers));
+        if (FILE_API.test(url)) rememberFileUrl(url);
       } catch (e) { /* ignore */ }
 
       const promise = origFetch.apply(this, args);
@@ -124,6 +144,7 @@
     try {
       this.__ds_url = String(url || "");
       this.__ds_headers = {};
+      if (FILE_API.test(this.__ds_url)) rememberFileUrl(this.__ds_url);
     } catch (e) { /* ignore */ }
     return origOpen.call(this, method, url, ...rest);
   };
@@ -183,6 +204,31 @@
     };
   }
 
+  /* ------------------------------------------------- 按需取附件内容（只读） */
+  async function fetchFileText(opt) {
+    const o = opt || {};
+    let url = typeof o.url === "string" ? o.url : "";
+    if (!url && o.fileId) url = fileUrlById.get(String(o.fileId)) || "";
+    if (!url) throw new Error("没有可用的附件地址");
+    let u;
+    try { u = new URL(url); } catch (e) { throw new Error("附件地址无效"); }
+    if (u.hostname !== "files.deepseeksvc.com" || !/\/api\/file$/.test(u.pathname)) {
+      throw new Error("不允许的附件地址");
+    }
+    const resp = await origFetch(u.toString(), {
+      credentials: "omit",
+      method: "GET",
+      headers: { accept: "*/*" }
+    });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const ct = (resp.headers.get("content-type") || "").toLowerCase();
+    if (ct.indexOf("image/") === 0) {
+      return { kind: "image", url: u.toString(), contentType: ct };
+    }
+    const text = await resp.text();
+    return { kind: "text", text, contentType: ct };
+  }
+
   window.addEventListener("message", (ev) => {
     const d = ev.data;
     if (!d || d[FLAG] || !d[REQ]) return;
@@ -191,6 +237,12 @@
       collectHistory(sessionId)
         .then((res) => post("history", Object.assign({ sessionId, requestId, ok: true }, res)))
         .catch((err) => post("history", { sessionId, requestId, ok: false, error: String((err && err.message) || err) }));
+    }
+    if (d.action === "fetchFile") {
+      const { requestId, url, fileId } = d;
+      fetchFileText({ url, fileId })
+        .then((res) => post("file", Object.assign({ requestId, ok: true }, res)))
+        .catch((err) => post("file", { requestId, ok: false, error: String((err && err.message) || err) }));
     }
   });
 

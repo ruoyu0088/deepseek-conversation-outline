@@ -282,6 +282,38 @@
   color: var(--ho-fg-dim); background: var(--ho-bg-soft); text-decoration: none;
 }
 .ho-prose a.ho-cite-num:hover { color: var(--ho-fg); border-color: var(--ho-accent); }
+/* 提问附件：文件名可点，展开后用只读 textarea 显示内容 */
+.ho-attachments { margin: 0 0 14px; }
+.ho-attach { margin: 0 0 6px; }
+.ho-attach-name {
+  font: inherit; font-size: 12px; font-family: var(--ho-font);
+  color: var(--ho-accent); background: transparent; border: 1px dashed var(--ho-border);
+  border-radius: 6px; padding: 4px 10px; cursor: pointer;
+}
+.ho-attach-name:hover { background: var(--ho-hover); }
+.ho-attach-viewer { margin-top: 6px; }
+.ho-attach-text {
+  width: 100%; min-height: 120px; max-height: 45vh;
+  background: var(--ho-bg-code); color: var(--ho-fg);
+  border: 1px solid var(--ho-border); border-radius: 8px;
+  padding: 10px 12px; font-family: var(--ho-mono); font-size: 12.5px; line-height: 1.6;
+  resize: vertical; box-sizing: border-box;
+}
+.ho-attach-hint { padding: 8px 0; font-size: 12px; color: var(--ho-fg-dim); cursor: default; }
+.ho-attach-img {
+  display: block; max-width: 100%; max-height: 45vh; margin: 2px 0 6px;
+  border: 1px solid var(--ho-border); border-radius: 8px; background: var(--ho-bg-soft);
+}
+/* .ho-attach-img 自己写了 display，会盖掉 [hidden] 的 UA 规则，得显式再关一次 */
+.ho-attach-img[hidden] { display: none; }
+.ho-attach-name[disabled] { opacity: .7; cursor: progress; }
+.ho-attach-size { margin-left: 6px; color: var(--ho-fg-dim); font-size: 11px; }
+/* 导出页里附件用 <details><summary>，去掉默认三角标记 */
+details.ho-attach { margin: 0 0 6px; }
+details.ho-attach > summary.ho-attach-name { list-style: none; }
+details.ho-attach > summary.ho-attach-name::-webkit-details-marker { display: none; }
+details.ho-attach > summary.ho-attach-name::marker { content: ""; }
+details.ho-attach[open] > summary.ho-attach-name { background: var(--ho-hover); }
 `;
 
   const EXPORT = `

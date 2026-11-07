@@ -32,6 +32,84 @@
     return lines.join("\n");
   };
 
+  /** FILE fragment 里可能出现的完整 URL 字段（有则直接用）。 */
+  const pickUrl = (f) => {
+    const keys = ["download_url", "file_url", "url", "src", "href"];
+    for (const k of keys) {
+      const v = f[k];
+      if (typeof v === "string" && /^https?:\/\//i.test(v)) return v;
+    }
+    return "";
+  };
+  /** 文件 id：真实数据里是 "file-<uuid>"，也兼容 file_id / fileId；"file-" 前缀要剥掉。 */
+  const pickId = (f) => {
+    const v = f.file_id || f.fileId || f.id;
+    if (typeof v !== "string" || !v) return "";
+    return v.indexOf("file-") === 0 ? v.slice(5) : v;
+  };
+  const pickState = (f) => {
+    const v = f.state || f.file_state || f.fileState || f.token || f.sign;
+    return typeof v === "string" ? v : "";
+  };
+
+  /**
+   * 附件的下载地址。实测（recon/probe_file_url.js）：
+   *   fetch("https://files.deepseeksvc.com/api" + signed_path)          → Failed to fetch
+   *   fetch("https://files.deepseeksvc.com/api" + signed_path + "&ty=r") → 200，正文
+   * 所以 ty=r（"读文本"）是必须的；且必须 credentials:"omit"（带 cookie 会被 CORS 拒）。
+   * 签名（state）本身就在 signed_path 里，不需要 Authorization。
+   */
+  const FILE_BASE = "https://files.deepseeksvc.com/api";
+  const fileUrlOf = (f) => {
+    const direct = pickUrl(f);
+    if (direct) return direct;
+
+    let path = typeof f.signed_path === "string" ? f.signed_path : "";
+    if (!path && pickId(f) && pickState(f)) {
+      path = "/file?file_id=" + encodeURIComponent(pickId(f)) + "&state=" + encodeURIComponent(pickState(f));
+    }
+    if (!path) return "";
+
+    if (/^https?:\/\//i.test(path)) {                       // 已经是绝对地址
+      // 只用它的 origin + path+query，保证不会被指向别的站
+      try {
+        const u = new URL(path);
+        if (u.hostname !== "files.deepseeksvc.com") return "";
+        path = u.pathname + u.search;
+      } catch (e) { return ""; }
+    }
+    if (path.charAt(0) !== "/") path = "/" + path;
+    const abs = FILE_BASE + path;
+    return /[?&]ty=/.test(abs) ? abs : abs + (abs.indexOf("?") >= 0 ? "&" : "?") + "ty=r";
+  };
+
+  /** FILE fragment → { name, isImage, size, fileId, state, url, text, raw }。
+   *  text 只取消息里能直接读到的字段；正文通常需要点击时再请求（content.js → hook.js）。 */
+  const attachmentsOf = (fragment) => {
+    const files = (fragment && fragment.files) || [];
+    const out = [];
+    for (const f of files) {
+      if (!f) continue;
+      const text =
+        (typeof f.content === "string" && f.content) ||
+        (typeof f.text === "string" && f.text) ||
+        (typeof f.file_content === "string" && f.file_content) ||
+        (typeof f.body === "string" && f.body) ||
+        "";
+      out.push({
+        name: String(f.file_name || "").trim(),
+        isImage: !!f.is_image,
+        size: Number(f.file_size) || 0,
+        fileId: pickId(f),
+        state: pickState(f),
+        url: fileUrlOf(f),
+        text: String(text || ""),
+        raw: f
+      });
+    }
+    return out;
+  };
+
   /**
    * 把一条 DeepSeek 消息拆成 {request, thinking[], answers[], files[], refs[], elapsed}。
    * 只取"界面上看得到"的内容：TIP（免责声明）与 TOOL_*（联网检索过程）都跳过。
@@ -42,7 +120,7 @@
    * 界面渲染时换成可点的"来源角标"。
    */
   function decompose(message) {
-    const out = { request: "", thinking: [], answers: [], files: [], refs: [], elapsed: 0 };
+    const out = { request: "", thinking: [], answers: [], files: [], attachments: [], refs: [], elapsed: 0 };
     const tools = {};
     for (const f of (message && message.fragments) || []) {
       if (!f || f.id == null) continue;
@@ -78,6 +156,8 @@
         case "FILE": {
           const text = filesText(f);
           if (text) out.files.push(text);
+          const atts = attachmentsOf(f);
+          if (atts.length) out.attachments.push.apply(out.attachments, atts);
           break;
         }
         default:
@@ -148,7 +228,10 @@
       if (role === "USER") {
         cur = {
           q: body || "（无文字提问）",
+          // 纯提问文字（不含 "[附件] xxx" 行）：面板里附件用可点的文件名单独显示，不重复
+          qText: String(d.request || "").trim(),
           qSearch: searchableText(body),
+          attachments: d.attachments || [],
           answers: [], answersSearch: [], thinkingSearch: [],
           time: m.inserted_at, id: m.message_id
         };
