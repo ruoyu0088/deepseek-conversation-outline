@@ -89,6 +89,12 @@
   white-space: nowrap; cursor: pointer; user-select: none;
 }
 .ho-toggle input { width: 13px; height: 13px; accent-color: #4d6bfe; cursor: pointer; }
+.ho-lang {
+    background: var(--ho-bg-soft); color: inherit; border: 1px solid var(--ho-border);
+    border-radius: 9px; padding: 7px 10px; font: inherit; font-size: 12px; cursor: pointer;
+    outline: none; white-space: nowrap;
+  }
+  .ho-lang:focus { border-color: var(--ho-accent); }
 .ho-btn {
   background: var(--ho-bg-soft); color: inherit; border: 1px solid var(--ho-border);
   border-radius: 9px; padding: 7px 13px; font: inherit; font-size: 13px; cursor: pointer;

@@ -34,6 +34,7 @@ def main() -> int:
     problems = []
 
     sess = Session(_pick(args.port, "chat.deepseek.com")["webSocketDebuggerUrl"])
+    H.ensure_active(sess)
     try:
         sess.send("Page.enable")
         sess.eval(H.BLOCKER, timeout=60)

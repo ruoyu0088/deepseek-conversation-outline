@@ -1,14 +1,21 @@
 {
   "manifest_version": 3,
-  "name": "DeepSeek 对话大纲",
+  "default_locale": "en",
+  "name": "__MSG_extName__",
   "version": "0.1.0",
-  "description": "把当前 DeepSeek 对话的全部提问与回答做成可搜索的大纲，代码高亮+复制，可导出单文件 HTML；另把输入框改为 Enter 换行、Ctrl+Enter 发送。",
+  "description": "__MSG_extDesc__",
   "content_scripts": [
     {
       "matches": ["https://chat.deepseek.com/*"],
       "js": ["src/keymaps.js"],
       "run_at": "document_start",
       "world": "ISOLATED"
+    },
+    {
+      "matches": ["https://chat.deepseek.com/*"],
+      "js": ["src/i18n.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
     },
     {
       "matches": ["https://chat.deepseek.com/*"],
@@ -51,6 +58,7 @@
         "vendor/prism/prism-ini.min.js",
         "vendor/prism/prism-powershell.min.js",
         "vendor/prism/prism-lua.min.js",
+        "src/i18n.js",
         "src/parse.js",
         "src/markdown.js",
         "src/styles.js",

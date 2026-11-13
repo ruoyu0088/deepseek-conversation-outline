@@ -1,5 +1,7 @@
 # DeepSeek 对话大纲（Chrome 扩展）
 
+[English](#english)
+
 解决长对话里"想找自己之前问过的某个问题只能拼命往上滚"的问题：把当前 DeepSeek 对话的全部提问与回答做成一个可搜索、可离线保存的大纲。
 
 这个项目是 [`chatgpt-conversation-outline`](../chatgpt-conversation-outline) 的 DeepSeek 版本：界面、Markdown 渲染、代码高亮、公式、导出与键盘接管都沿用同一套实现，数据采集与解析按 DeepSeek 的接口重写。
@@ -32,6 +34,7 @@
 - **「搜索含思考」勾选框**（默认勾选）：控制搜索是否也匹配「深度思考」里的内容。勾选时，只有思考命中的条目也会显示"思考中命中 N 处"，并自动展开对应的思考块。
 - **下载 HTML**：把整个对话导出成一个单文件 HTML（自带样式与高亮，离线打开后搜索框、复制按钮、折叠块都能用）。
 - **关闭** / 按 `Esc` 关闭面板。
+- **界面语言**：面板右上角的「语言 / Language」下拉框可切换 **自动（跟随浏览器）/ 中文 / English**。默认是自动：浏览器语言以 `zh` 开头就用中文，否则用英文。选择保存在 `localStorage` 的 `ds-outline:lang` 键里。扩展在 Chrome 扩展页显示的名称与描述也会按浏览器语言选择中/英（见 `ext/_locales/`）。
 
 ### 输入框：Enter 换行，Ctrl+Enter 发送
 
@@ -88,6 +91,7 @@
 ext/manifest.json        MV3 清单（keymaps 隔离世界 / hook 主世界 / 面板脚本）
 ext/src/keymaps.js       document_start：输入框 Enter/Ctrl+Enter 接管（隔离世界）
 ext/src/hook.js          主世界：截获 fetch/XHR、按需重取历史（只读 GET）
+ext/src/i18n.js          界面中英文案表 + 语言偏好（auto/zh/en，两边世界都用同一份）
 ext/src/parse.js         纯逻辑：fragments → 提问/回答/思考/来源角标
 ext/src/markdown.js      Markdown 渲染 + 消毒 + 公式 + 搜索高亮
 ext/src/styles.js        界面样式 + 代码高亮配色（深色/浅色跟随页面）
@@ -95,6 +99,7 @@ ext/src/content.js       界面与交互：悬浮按钮、面板、搜索、代�
 ext/vendor/prism-config.js  Prism 手动模式 + 语言别名（py→python、js→javascript…）
 ext/vendor/prism/           Prism 核心与 31 个语言文件（约 140KB，离线打包）
 ext/vendor/katex/           KaTeX（约 275KB，离线打包，输出 MathML）
+ext/_locales/             Chrome 扩展页显示的名称/描述（en、zh_CN）
 tools/                   开发期验证脚本（走 CDP，不影响扩展运行）
 recon/                   抓包样本与验证产物（本地文件，不进版本库）
 安装扩展.bat              打开 chrome://extensions 与 ext 目录
@@ -137,6 +142,10 @@ $env:MKL_THREADING_LAYER = "TBB"
 & $PY tools/test_attach.py 9222                                   # 附件：点文件名 → 取正文 → 再点收起
 & $PY tools/test_attach_export.py                                 # 附件：两个附件都能读 + 读过的正文进导出文件
 & $PY tools/probe_ty.py 9222                                      # 附件接口：地址补 ty=r、坏域名/空地址的拒绝路径
+& $PY tools/test_i18n.py 9222                                     # 中英切换：标题/计数/占位符/按钮/详情文案
+& $PY tools/test_i18n_export.py 9222                              # 导出跟随语言（en/zh 各导一份到 file:// 读回）
+& $PY tools/probe_console.py 9222                                 # 刷新页面并打印 console/异常/隔离世界的 context
+& $PY tools/probe_isolated.py 9222 "window.__dsKeymaps ? 1 : 0"   # 在扩展隔离世界里求值
 & $PY tools/check_export.py 9222 recon/export-test.html --search Pyodide   # 导出文件体检
 & $PY tools/shot_panel.py 9222 recon/shot.png --select 3           # 截图
 & $PY tools/shot_attach.py 9222 recon/shot.png --select 18         # 截图：带附件的一轮（附件已展开）
@@ -150,6 +159,7 @@ $env:MKL_THREADING_LAYER = "TBB"
 2. **按键用 CDP 可信事件**：`Input.dispatchKeyEvent` / `Input.insertText`，`evaluate` 出来的合成 KeyboardEvent 测不出默认行为。
 3. **复制按钮用真实鼠标点击**（`Input.dispatchMouseEvent`）：JS 的 `.click()` 没有用户激活，Chrome 会拒绝 `clipboard.writeText`。
 4. 每个阶段重新加载页面，避免上一阶段"被拦截的发送"把页面留在奇怪状态。
+5. **先确认页面是"可见"的**：Chrome 窗口被别的窗口完全遮住时 `document.visibilityState === "hidden"`，此时 CDP 的 `Input.dispatchKeyEvent` 根本不投递、`clipboard.writeText` 会被拒、连 `scrollTo({behavior:"smooth"})` 都不动 —— 表现就像扩展坏了。`tools/harness.py` 的 `ensure_active(sess)`（`Emulation.setFocusEmulationEnabled` + `Page.setWebLifecycleState` + `Page.bringToFront`）会在连接时自动调用；`launch_debug.py` 另外加了 `--disable-backgrounding-occluded-windows` 等参数。
 
 ### 已验证（2026-11-03，Chrome 156 / Windows）
 
@@ -172,3 +182,101 @@ $env:MKL_THREADING_LAYER = "TBB"
 - 导出：先点开 `bundle.txt` 再导出 → 生成的 HTML 里能搜到附件正文（`===== FILE TREE =====` 起的文件树），文件 2,331,288 字节；没点开过的附件保留文件名 + 大小 + 原始地址 + 说明文字。
 - `file://` 页面直连签名地址 → `Failed to fetch`（`Origin: null` 被 CORS 拦），所以导出页只能带"已经读过"的正文。
 - 回归：`tools/test_real.py` / `test_ui.py`（含真实下载导出 1,888,004 字节）/ `test_features.py` / `test_key.py` / `check_export.py` 全过。
+
+### 已验证（2026-11-14，Chrome 157）：中英双语
+
+- **跟随浏览器**：浏览器语言是 `ja` → 默认英文（`Conversation Outline` / `77 turns` / `Search questions and answers… (Ctrl+K)` / `Enter for newline` / `Search thinking` / `Download HTML` / `Close` / `Question · Round 1` / `Jump to answer ↓` / `Copy question` / `Copy answer` / `Thinking`）。
+- **切中文**：`对话大纲` / `77 条` / `搜索提问和回答…（Ctrl+K 聚焦）` / `Enter 换行` / `搜索含思考` / `下载 HTML` / `关闭` / `提问 · 第 1 轮` / `跳到回答 ↓` / `复制提问` / `复制回答` / `深度思考`；偏好写进 `localStorage["ds-outline:lang"]`，刷新后保持（`en`、`zh` 都验过）。
+- **搜索不受语言影响**：两种语言下搜 `Pyodide` 都是 33/77 条、正文高亮数一致。
+- **占位符也翻译**：`parse.js` 生成的 `[附件]` / `（无文字提问）` / `（对话开始）` 只在显示层替换（`displayQ()`），所以数据层的中文占位符不变、正则仍能匹配。
+- **导出跟随语言**：英文导出文件名 `…-outline-20261114-0831.html`（2,347,581 字节），标题 `… · Conversation Outline`、`meta` 为 `77 turns` / `Exported 11/14/2026, 8:31:15 AM`；中文导出 `…-对话大纲-….html`（2,348,903 字节）、`77 条` / `导出于 2026/11/14 08:31:33`；两份导出页 `errors` 均为空。
+- **回归**：`test_real.py` / `test_features.py` / `test_attach.py` / `test_attach_export.py` / `test_ui.py` / `check_export.py` 全过（77 轮、335 代码块、20815 高亮 token、0 残留 `[reference:N]`）。
+- **修过的两个坑**：`ext/src/content.js:368` 曾重复声明 `function open() {`（语法错误，`node --check` 定位到报错行 1310）；`scrollTo({behavior:"smooth"})` 在窗口被遮挡时不走动画，已加 `smoothScroll()` 兜底（220ms 后位置没动就直接赋值）。
+
+## English
+
+### DeepSeek Conversation Outline (Chrome extension)
+
+Long conversations make it hard to find a question you asked earlier. This extension turns every question and answer in the current DeepSeek conversation into a searchable, offline-saveable outline.
+
+It is the DeepSeek port of [`chatgpt-conversation-outline`](../chatgpt-conversation-outline): the UI, Markdown rendering, code highlighting, math, export and keyboard takeover share the same implementation; data collection and parsing are rewritten for DeepSeek's API.
+
+#### Language
+
+- The interface supports **Chinese** and **English**.
+- Default: follow the browser language (`navigator.language` starting with `zh` → Chinese, otherwise English).
+- Switch with the **Language / 语言** dropdown in the panel header. The choice is stored in `localStorage` under `ds-outline:lang`.
+- The extension name/description shown on `chrome://extensions` is localized through `ext/_locales/`.
+- This README contains both languages.
+
+#### Install (manual, one-time)
+
+1. Open `chrome://extensions`.
+2. Enable **Developer mode** (top right).
+3. Click **Load unpacked** and choose `...\deepseek-conversation-outline\ext`.
+4. Open any DeepSeek chat (`https://chat.deepseek.com/a/chat/s/…`). A round button appears at the bottom right.
+
+After editing files in `ext/`, click the extension's refresh icon on `chrome://extensions`.
+
+#### Usage
+
+- Click the round button to open the **Conversation Outline** panel.
+- The left list shows every question in this conversation (truncated). Click one to show its full text and the answer on the right.
+- Buttons on the question box: **Copy question**, **Copy answer** (Markdown source, code fences kept), **Jump to answer ↓**.
+- **Thinking** blocks are collapsed by default; click the header to expand.
+- Code blocks are syntax-highlighted; the header shows the language and a **Copy** button.
+- `[reference:N]` citations become clickable chips.
+- Attachments are listed under the question; click a filename to load its content (text or image) on demand.
+- The search box matches both questions and answers. A **Search thinking** checkbox (on by default) controls whether thinking text is searched too.
+- **Download HTML** exports the whole conversation as a single offline HTML file.
+- **Close** or `Esc` closes the panel.
+
+##### Input box: Enter inserts a newline, Ctrl+Enter sends
+
+| Key | Action |
+|---|---|
+| `Enter` | Newline |
+| `Ctrl + Enter` (`Cmd + Enter` on macOS) | Send |
+| `Shift + Enter` | Newline (native behavior) |
+
+The **Enter for newline** checkbox in the panel header toggles this (stored in `localStorage` under `ds-outline:enter-newline`). IME composition is not interrupted.
+
+#### How it works (summary)
+
+1. `ext/src/hook.js` (main world) hooks `fetch`/XHR and forwards the conversation JSON the page already requested.
+2. The panel re-fetches `GET /api/v0/chat/history_messages?chat_session_id=…` once when opened (read-only).
+3. `ext/src/parse.js` turns `chat_messages` into question/answer turns.
+4. `ext/src/markdown.js` renders Markdown, sanitizes it, renders math with bundled KaTeX, and highlights search hits.
+5. `ext/src/content.js` builds the panel, search, copy, export, and language switch.
+6. `ext/src/i18n.js` provides the zh/en UI strings and the language preference (`auto` / `zh` / `en`).
+
+The extension only issues GET requests; it never sends messages or uploads data.
+
+#### Files
+
+```
+ext/manifest.json        MV3 manifest (keymaps / hook in MAIN world / panel)
+ext/src/i18n.js          UI strings (zh/en), injected into both worlds
+ext/src/keymaps.js       Enter/Ctrl+Enter takeover
+ext/src/hook.js          Fetch/XHR capture + on-demand history (read-only)
+ext/src/parse.js         fragments → turns
+ext/src/markdown.js      Markdown + sanitize + math + search highlight
+ext/src/styles.js        Styles (dark/light)
+ext/src/content.js       UI, search, copy, export
+ext/_locales/            Extension name/description (en, zh_CN)
+```
+
+#### Known limits
+
+- Code highlighting only works for fenced languages that are bundled.
+- Copy buttons use `navigator.clipboard`; on `file://` pages they fall back to selecting the block and asking you to press Ctrl+C.
+- Copy answer returns the Markdown source (code fences and math kept); `[reference:N]` markers are stripped.
+- Enter takeover depends on DeepSeek's current composer structure.
+- Attachments: content must be fetched from the signed URL; offline exports only include content that was opened on the site before exporting.
+- Citations only support `[reference:N]` in the text.
+- Math supports `\(…\)`, `$…$`, `$$…$$`, `\[…\]`.
+- Messages produced by edit/regenerate all go into the same turn.
+- Opening the panel requires network access to re-fetch history.
+
+For the full development and verification notes, see the Chinese section above.
+

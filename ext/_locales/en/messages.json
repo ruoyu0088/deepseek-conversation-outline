@@ -1,0 +1,4 @@
+{
+  "extName": { "message": "DeepSeek Conversation Outline" },
+  "extDesc": { "message": "Turn the current DeepSeek conversation into a searchable outline: every question and answer, syntax-highlighted code with copy buttons, and a single-file HTML export. Also makes Enter insert a newline and Ctrl+Enter send." }
+}

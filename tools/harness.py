@@ -92,8 +92,35 @@ BLOCKER = r"""
 """
 
 
+def ensure_active(sess: Session) -> dict:
+    """让 CDP 的输入事件真的能到页面。
+
+    窗口被别的窗口完全遮住时，Chrome 会把页面标成 visibilityState="hidden"：
+    那时 Input.dispatchKeyEvent 根本不投递（键盘会"假失败"），
+    navigator.clipboard.writeText 也会以 NotAllowedError 拒绝。
+    这里用 focus emulation + 生命周期 active 把页面救回前台状态。
+    """
+    out = {}
+    for method, params in (("Page.bringToFront", {}),
+                           ("Emulation.setFocusEmulationEnabled", {"enabled": True}),
+                           ("Page.setWebLifecycleState", {"state": "active"})):
+        try:
+            sess.send(method, params)
+            out[method] = "ok"
+        except Exception as exc:  # noqa: BLE001
+            out[method] = str(exc)[:80]
+    time.sleep(0.3)
+    try:
+        out["visibility"] = sess.eval("document.visibilityState")
+    except Exception:
+        pass
+    return out
+
+
 def connect(port: int, match: str = "chat.deepseek.com") -> Session:
-    return Session(_pick(port, match)["webSocketDebuggerUrl"])
+    sess = Session(_pick(port, match)["webSocketDebuggerUrl"])
+    ensure_active(sess)
+    return sess
 
 
 def read_script(rel: str) -> str:

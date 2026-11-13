@@ -15,6 +15,8 @@
   const MD = window.__dsMarkdown;
   const STYLES = window.__dsStyles;
   const P = window.__dsParse;
+  const I18N = window.__dsI18n;
+  const t = I18N.t;
 
   const state = {
     sessionId: null,
@@ -46,7 +48,7 @@
       const requestId = "f" + (++fileReqSeq).toString(36) + Math.random().toString(36).slice(2);
       const timer = setTimeout(() => {
         filePending.delete(requestId);
-        reject(new Error("请求超时"));
+        reject(new Error(t("requestTimeout")));
       }, 30000);
       filePending.set(requestId, { resolve, reject, timer });
       window.postMessage({
@@ -63,15 +65,22 @@
 
   const truncate = (text, n) => (text.length > n ? text.slice(0, n) + "…" : text);
 
+  /** 把 parse.js 生成的中文占位标记换成当前语言的文案（只在显示层用，搜索索引保持原样）。 */
+  const displayQ = (text) => String(text == null ? "" : text)
+    .replace(/\[附件\]/g, t("attachment"))
+    .replace(/\[图片\]/g, t("image"))
+    .replace(/（无文字提问）/g, t("noTextQuestion"))
+    .replace(/（对话开始）/g, t("conversationStart"));
+
   /** 复制用的 Markdown：去掉联网检索的 `[reference:N]` 角标（那是渲染用的记号，纯文本里只是噪音）。 */
   const copyableMd = (s) => String(s == null ? "" : s).replace(/\[reference:\d+\]/g, "").replace(/[ \t]+$/gm, "");
 
   /** 提问框里显示的文字。带附件的提问：消息里的 "[附件] xxx" 行不重复显示（附件有单独的可点文件名），
    *  只有附件没有文字时返回空串（面板里连框一起隐藏）。 */
-  const qTextOf = (t) => {
-    const qt = t.qText != null ? t.qText : "";
+  const qTextOf = (turn) => {
+    const qt = turn.qText != null ? turn.qText : "";
     if (qt) return qt;
-    return t.attachments && t.attachments.length ? "" : t.q;
+    return turn.attachments && turn.attachments.length ? "" : turn.q;
   };
 
   /* ------------------------------------------------------------ 代码高亮 */
@@ -111,7 +120,7 @@
   /** 把文本写进剪贴板；失败时退化为"选中 fallbackEl（默认该代码块）的文本"，让用户按 Ctrl+C。
    *  按钮文案会短暂变成"已复制"，1.6 秒后恢复成 btn.__label（默认"复制"）。 */
   function copyText(text, btn, fallbackEl) {
-    const label = (btn && btn.__label) || "复制";
+    const label = (btn && btn.__label) || t("copy");
     const flash = (msg, ok) => {
       if (!btn) return;
       btn.textContent = msg;
@@ -122,20 +131,20 @@
     const legacy = () => {
       try {
         const el = fallbackEl || (btn && btn.closest(".ho-code") && btn.closest(".ho-code").querySelector("pre"));
-        if (!el) { flash("复制失败", false); return; }
+        if (!el) { flash(t("copyFailed"), false); return; }
         const range = document.createRange();
         range.selectNodeContents(el);
         const sel = window.getSelection();
         sel.removeAllRanges();
         sel.addRange(range);
         const ok = document.execCommand("copy");
-        flash(ok ? "已复制" : "已选中，请按 Ctrl+C", ok);
+        flash(ok ? t("copied") : t("selectCopy"), ok);
       } catch (e) {
-        flash("复制失败", false);
+        flash(t("copyFailed"), false);
       }
     };
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(() => flash("已复制", true)).catch(legacy);
+      navigator.clipboard.writeText(text).then(() => flash(t("copied"), true)).catch(legacy);
     } else {
       legacy();
     }
@@ -157,11 +166,11 @@
       head.className = "ho-code-head";
       const lang = document.createElement("span");
       lang.className = "ho-code-lang";
-      lang.textContent = pre.getAttribute("data-lang") || "代码";
+      lang.textContent = pre.getAttribute("data-lang") || t("codeFallback");
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "ho-code-copy";
-      btn.textContent = "复制";
+      btn.textContent = t("copy");
       btn.addEventListener("click", (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
@@ -194,7 +203,7 @@
   }
 
   const currentTitle = () => state.titles.get(state.sessionId) ||
-    (document.title || "").replace(/\s*[-|]\s*DeepSeek\s*$/i, "").trim() || "DeepSeek 对话";
+    (document.title || "").replace(/\s*[-|]\s*DeepSeek\s*$/i, "").trim() || t("conversationFallback");
 
   /* ---------------------------------------------------------------- 样式 */
   function pageIsLight() {
@@ -222,7 +231,7 @@
     const root = document.createElement("div");
     root.className = "ho-root" + (pageIsLight() ? " ho-light" : "");
     root.innerHTML = `
-      <button class="ho-fab" type="button" title="对话大纲：列出本对话的全部提问与回答">
+      <button class="ho-fab" type="button" title="${t("fabTitle")}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M4 6h16M4 12h16M4 18h9"></path>
@@ -230,16 +239,21 @@
       </button>
       <div class="ho-panel" hidden>
         <div class="ho-head">
-          <div class="ho-title">对话大纲 <span class="ho-count"></span></div>
-          <input class="ho-search" type="search" placeholder="搜索提问和回答…（Ctrl+K 聚焦）" autocomplete="off" title="按 Ctrl+K 聚焦搜索并全选">
-          <label class="ho-toggle" title="勾选后：Enter 换行，Ctrl+Enter 发送">
-            <input type="checkbox" class="ho-enter-toggle"> Enter 换行
+          <div class="ho-title"><span class="ho-title-text"></span> <span class="ho-count"></span></div>
+          <input class="ho-search" type="search" autocomplete="off">
+          <label class="ho-toggle">
+            <input type="checkbox" class="ho-enter-toggle"> <span class="ho-enter-text"></span>
           </label>
-          <label class="ho-toggle" title="搜索时是否也匹配「深度思考」里的内容">
-            <input type="checkbox" class="ho-think-toggle"> 搜索含思考
+          <label class="ho-toggle">
+            <input type="checkbox" class="ho-think-toggle"> <span class="ho-think-text"></span>
           </label>
-          <button class="ho-btn primary ho-download" type="button">下载 HTML</button>
-          <button class="ho-btn ho-close" type="button">关闭</button>
+          <select class="ho-lang">
+            <option value="auto"></option>
+            <option value="zh"></option>
+            <option value="en"></option>
+          </select>
+          <button class="ho-btn primary ho-download" type="button"></button>
+          <button class="ho-btn ho-close" type="button"></button>
         </div>
         <div class="ho-body">
           <ul class="ho-list"></ul>
@@ -254,7 +268,9 @@
       host, root, shadow,
       fab: $(".ho-fab"), panel: $(".ho-panel"), list: $(".ho-list"), detail: $(".ho-detail"),
       search: $(".ho-search"), count: $(".ho-count"), close: $(".ho-close"), download: $(".ho-download"),
-      enterToggle: $(".ho-enter-toggle"), thinkToggle: $(".ho-think-toggle")
+      enterToggle: $(".ho-enter-toggle"), thinkToggle: $(".ho-think-toggle"),
+      titleText: $(".ho-title-text"), enterText: $(".ho-enter-text"), thinkText: $(".ho-think-text"),
+      lang: $(".ho-lang")
     };
 
     try { expanded = localStorage.getItem("ds-outline:panel-expanded") === "1"; } catch (e) { expanded = false; }
@@ -279,6 +295,14 @@
       renderList();
       renderDetail();
     });
+
+    ui.lang.value = I18N.readPref();
+    ui.lang.addEventListener("change", () => {
+      I18N.setLang(ui.lang.value);
+      refreshStaticText();
+      renderAll();
+    });
+    refreshStaticText();
 
     ui.fab.addEventListener("click", open);
     ui.close.addEventListener("click", close);
@@ -322,6 +346,25 @@
     });
   }
 
+  /** 把静态控件的文案刷新成当前语言（语言切换后调用）。 */
+  function refreshStaticText() {
+    if (!ui) return;
+    ui.fab.title = t("fabTitle");
+    ui.titleText.textContent = t("appName");
+    ui.search.placeholder = t("searchPlaceholder");
+    ui.search.title = t("searchFocusTitle");
+    ui.enterText.textContent = t("enterNewline");
+    ui.enterText.parentElement.title = t("enterNewlineTitle");
+    ui.thinkText.textContent = t("searchThinking");
+    ui.thinkText.parentElement.title = t("searchThinkingTitle");
+    ui.lang.title = t("langTitle");
+    if (ui.lang.options[0]) ui.lang.options[0].textContent = t("langAuto");
+    if (ui.lang.options[1]) ui.lang.options[1].textContent = t("langZh");
+    if (ui.lang.options[2]) ui.lang.options[2].textContent = t("langEn");
+    ui.download.textContent = t("downloadHtml");
+    ui.close.textContent = t("close");
+  }
+
   function open() {
     ui.panel.hidden = false;
     try { localStorage.setItem("ds-outline:panel-open", "1"); } catch (e) { /* ignore */ }
@@ -335,7 +378,7 @@
     }
     renderAll();
     if (!state.sessionId) {
-      state.error = "请先打开一个对话（地址形如 /a/chat/s/…）再点这个按钮。";
+      state.error = t("needConversation");
       renderAll();
       return;
     }
@@ -386,13 +429,13 @@
     const normalized = raw ? (P.searchableText(raw) || raw) : "";
     const q = normalized.toLowerCase();
     const rows = [];
-    state.turns.forEach((t, i) => {
-      const qHits = q ? MD.countOccurrences(t.qSearch != null ? t.qSearch : t.q, q) : 0;
-      const aHits = q ? (t.answersSearch || []).reduce((n, a) => n + MD.countOccurrences(a, q), 0) : 0;
+    state.turns.forEach((turn, i) => {
+      const qHits = q ? MD.countOccurrences(turn.qSearch != null ? turn.qSearch : turn.q, q) : 0;
+      const aHits = q ? (turn.answersSearch || []).reduce((n, a) => n + MD.countOccurrences(a, q), 0) : 0;
       const tHits = (q && state.includeThinking)
-        ? (t.thinkingSearch || []).reduce((n, a) => n + MD.countOccurrences(a, q), 0) : 0;
+        ? (turn.thinkingSearch || []).reduce((n, a) => n + MD.countOccurrences(a, q), 0) : 0;
       const visible = !q || qHits > 0 || aHits > 0 || tHits > 0;
-      rows.push({ t, i, qHits, aHits, tHits, visible });
+      rows.push({ t: turn, i, qHits, aHits, tHits, visible });
     });
     state.visible = rows.filter((r) => r.visible);
     return { q: raw, rows };
@@ -408,8 +451,8 @@
     // 页面自己的 history 请求可能比我们的先到：已经有数据就直接显示条数，别一直挂着"读取中…"
     const loading = state.loading && !state.turns.length;
     ui.count.textContent = loading
-      ? "读取中…"
-      : (q ? shown.length + " / " + state.turns.length + " 条" : state.turns.length + " 条");
+      ? t("loading")
+      : (q ? t("countFiltered", shown.length, state.turns.length) : t("countAll", state.turns.length));
 
     if (state.error) {
       const li = document.createElement("li");
@@ -421,7 +464,7 @@
     if (!shown.length) {
       const li = document.createElement("li");
       li.className = "ho-empty";
-      li.textContent = q ? "没有匹配的提问或回答" : (state.loading ? "正在读取本对话…" : "这个对话还没有可显示的内容");
+      li.textContent = q ? t("noMatch") : (state.loading ? t("reading") : t("emptyConversation"));
       list.appendChild(li);
       return;
     }
@@ -433,13 +476,13 @@
       const qDiv = document.createElement("div");
       qDiv.className = "ho-item-q";
       qDiv.innerHTML = '<span class="ho-item-idx">' + (row.i + 1) + "</span>" +
-        MD.escapeHtml(truncate(row.t.q.replace(/\s+/g, " "), 160));
+        MD.escapeHtml(truncate(displayQ(row.t.q).replace(/\s+/g, " "), 160));
       if (q) MD.highlightIn(qDiv, q);
       li.appendChild(qDiv);
       if (q && row.qHits === 0 && (row.aHits > 0 || row.tHits > 0)) {
         const parts = [];
-        if (row.aHits > 0) parts.push("回答中命中 " + row.aHits + " 处");
-        if (row.tHits > 0) parts.push("思考中命中 " + row.tHits + " 处");
+        if (row.aHits > 0) parts.push(t("searchHitAnswer", row.aHits));
+        if (row.tHits > 0) parts.push(t("searchHitThinking", row.tHits));
         const badge = document.createElement("span");
         badge.className = "ho-badge";
         badge.textContent = parts.join(" · ");
@@ -496,17 +539,30 @@
     return true;
   }
 
+  /** 面板内部平滑滚动，带"动画没起来就直接跳"的兜底。
+   *  窗口被遮挡 / 系统开了减弱动效时，Chrome 的平滑滚动可能一帧都不走
+   *  （scrollTo 的 smooth 由合成器驱动），这时直接赋值保证位置正确。 */
+  function smoothScroll(pane, top) {
+    const target = Math.max(0, top);
+    const before = pane.scrollTop;
+    try {
+      pane.scrollTo({ top: target, behavior: "smooth" });
+    } catch (e) {
+      pane.scrollTop = target;
+      return;
+    }
+    if (target === before) return;
+    setTimeout(() => {
+      if (pane.scrollTop === before) pane.scrollTop = target;   // 动画没动 → 直接跳
+    }, 220);
+  }
+
   function scrollMatchIntoView(mark) {
     if (!mark || !ui) return;
     const pane = ui.detail;
     const paneRect = pane.getBoundingClientRect();
     const markRect = mark.getBoundingClientRect();
-    const top = pane.scrollTop + (markRect.top - paneRect.top) - pane.clientHeight * 0.3;
-    try {
-      pane.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
-    } catch (e) {
-      pane.scrollTop = Math.max(0, top);
-    }
+    smoothScroll(pane, pane.scrollTop + (markRect.top - paneRect.top) - pane.clientHeight * 0.3);
   }
 
   function visiblePos() {
@@ -575,7 +631,7 @@
         const chip = document.createElement(ref && ref.url ? "a" : "span");
         chip.className = "ho-cite-num";
         chip.textContent = String(idx + 1);
-        chip.title = (ref && ref.title) || (ref && ref.url) || ("参考来源 " + (idx + 1));
+        chip.title = (ref && ref.title) || (ref && ref.url) || t("sourceLabel", idx + 1);
         if (ref && ref.url) {
           chip.href = ref.url;
           chip.target = "_blank";
@@ -630,9 +686,9 @@
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "ho-attach-name";
-    btn.textContent = a.isImage ? "[图片] " + (a.name || "") : (a.name || "[附件]");
+    btn.textContent = a.isImage ? t("image") + " " + (a.name || "") : (a.name || t("attachment"));
     const sizeText = a.size ? (a.size >= 1024 * 1024 ? (a.size / 1048576).toFixed(1) + " MB" : Math.round(a.size / 1024) + " KB") : "";
-    btn.title = "点击查看附件内容" + (sizeText ? " · " + sizeText : "");
+    btn.title = t("attachClickTitle", sizeText);
     const view = document.createElement("div");
     view.className = "ho-attach-viewer";
     view.hidden = true;
@@ -641,7 +697,7 @@
     ta.className = "ho-attach-text";
     const img = document.createElement("img");
     img.className = "ho-attach-img";
-    img.alt = a.name || "附件图片";
+    img.alt = a.name || "attachment image";
     img.hidden = true;
     const hint = document.createElement("div");
     hint.className = "ho-attach-hint";
@@ -660,9 +716,9 @@
       img.src = url;
       img.onerror = () => {
         img.hidden = true;
-        showHint("图片没能加载，地址：" + url);
+        showHint(t("attachImageFailed", url));
       };
-      showHint("图片附件" + (sizeText ? "（" + sizeText + "）" : "") + " · 点这里在新标签打开");
+      showHint(t("attachImageHint", sizeText));
       hint.hidden = false;
       hint.onclick = () => window.open(url, "_blank", "noopener");
     };
@@ -704,7 +760,7 @@
 
       loading = true;
       btn.disabled = true;
-      showHint("正在读取附件内容…");
+      showHint(t("attachLoading"));
       ta.hidden = true;
       img.hidden = true;
       try {
@@ -720,7 +776,7 @@
       } catch (err) {
         ta.hidden = true;
         img.hidden = true;
-        showHint("读取附件失败：" + String((err && err.message) || err));
+        showHint(t("attachFailed", String((err && err.message) || err)));
       } finally {
         loading = false;
         btn.disabled = false;
@@ -743,13 +799,13 @@
     head.className = "ho-think-head";
     const title = document.createElement("span");
     title.className = "ho-think-title";
-    title.textContent = "深度思考";
+    title.textContent = t("thinking");
     const meta = document.createElement("span");
     meta.className = "ho-think-meta";
     const chars = answer.thinking.replace(/\s+/g, "").length;
     const bits = [];
-    if (chars) bits.push(chars >= 1000 ? (chars / 1000).toFixed(1) + " 千字" : chars + " 字");
-    if (answer.elapsed) bits.push("用时 " + answer.elapsed.toFixed(1) + " 秒");
+    if (chars) bits.push(t("charsText", chars));
+    if (answer.elapsed) bits.push(t("elapsedText", answer.elapsed));
     meta.textContent = bits.join(" · ");
     const arrow = document.createElement("span");
     arrow.className = "ho-think-arrow";
@@ -778,18 +834,18 @@
     pane.textContent = "";
     state.matchMarks = [];
     state.currentMatch = 0;
-    const t = state.turns[state.selected];
-    if (!t) {
+    const turn = state.turns[state.selected];
+    if (!turn) {
       const empty = document.createElement("div");
       empty.className = "ho-empty";
-      empty.textContent = state.error || (state.loading ? "正在读取本对话…" : "点左侧的一条提问，这里显示它对应的回答。");
+      empty.textContent = state.error || (state.loading ? t("reading") : t("pickPrompt"));
       pane.appendChild(empty);
       return;
     }
 
     const q = state.query.trim();
     const qLower = q ? (P.searchableText(q) || q).toLowerCase() : "";
-    const answerMd = copyableMd(t.answers.map((a) => a.text).filter((s) => s && s.trim()).join("\n\n"));
+    const answerMd = copyableMd(turn.answers.map((a) => a.text).filter((s) => s && s.trim()).join("\n\n"));
 
     // 顶部：完整提问（代码框样式）+ 复制提问/复制回答/跳到回答
     const qBox = document.createElement("div");
@@ -798,38 +854,38 @@
     bar.className = "ho-question-bar";
     const label = document.createElement("span");
     label.className = "ho-question-label";
-    label.textContent = "提问 · 第 " + (state.selected + 1) + " 轮";
+    label.textContent = t("questionLabel", state.selected + 1);
     const actions = document.createElement("div");
     actions.className = "ho-question-actions";
     const jump = document.createElement("button");
     jump.type = "button";
     jump.className = "ho-jump-btn";
-    jump.textContent = "跳到回答 ↓";
+    jump.textContent = t("jumpToAnswer");
     jump.addEventListener("click", () => scrollToAnswer(pane));
     actions.appendChild(jump);
     bar.appendChild(label);
     bar.appendChild(actions);
     const qPre = document.createElement("pre");
     qPre.className = "ho-question";
-    qPre.textContent = qTextOf(t);
+    qPre.textContent = displayQ(qTextOf(turn));
     if (!qPre.textContent) qPre.hidden = true;   // 只有附件、没有文字时不留空框
 
     const copyQ = document.createElement("button");
     copyQ.type = "button";
     copyQ.className = "ho-copy-btn ho-copy-q";
-    copyQ.textContent = "复制提问";
-    copyQ.__label = "复制提问";
-    copyQ.title = "把这一轮的提问复制到剪贴板";
-    copyQ.addEventListener("click", () => copyText(t.q, copyQ, qPre));
+    copyQ.textContent = t("copyPrompt");
+    copyQ.__label = t("copyPrompt");
+    copyQ.title = t("copyPromptTitle");
+    copyQ.addEventListener("click", () => copyText(turn.q, copyQ, qPre));
 
     const copyA = document.createElement("button");
     copyA.type = "button";
     copyA.className = "ho-copy-btn ho-copy-a";
-    copyA.textContent = "复制回答";
-    copyA.__label = "复制回答";
-    copyA.title = "把这一轮的回答（Markdown 原文，含代码围栏）复制到剪贴板";
+    copyA.textContent = t("copyAnswer");
+    copyA.__label = t("copyAnswer");
+    copyA.title = t("copyAnswerTitle");
     copyA.disabled = !answerMd;
-    if (!answerMd) copyA.title = "这条提问还没有回答";
+    if (!answerMd) copyA.title = t("noAnswerTitle");
 
     actions.insertBefore(copyQ, jump);
     actions.insertBefore(copyA, jump);
@@ -839,10 +895,10 @@
     pane.appendChild(qBox);
 
     // 附件区：文件名可点击，展开后用一个只读 textarea 显示内容
-    if (t.attachments && t.attachments.length) {
+    if (turn.attachments && turn.attachments.length) {
       const attachBox = document.createElement("div");
       attachBox.className = "ho-attachments";
-      for (const a of t.attachments) attachBox.appendChild(attachmentRow(a));
+      for (const a of turn.attachments) attachBox.appendChild(attachmentRow(a));
       pane.appendChild(attachBox);
     }
 
@@ -856,10 +912,10 @@
     });
     if (q) MD.highlightIn(qBox, q);
 
-    if (!t.answers.length) {
+    if (!turn.answers.length) {
       const empty = document.createElement("div");
       empty.className = "ho-empty";
-      empty.textContent = "这条提问还没有回答。";
+      empty.textContent = t("noAnswerForThis");
       pane.appendChild(empty);
       refreshMatches();
       if (q && state.matchMarks.length) setCurrentMatch(0, false);
@@ -868,10 +924,10 @@
 
     const mark = document.createElement("div");
     mark.className = "ho-answer-anchor";
-    mark.textContent = "回答 · " + t.answers.length + " 段";
+    mark.textContent = t("answerLabel", turn.answers.length);
     answersBox.appendChild(mark);
 
-    for (const answer of t.answers) {
+    for (const answer of turn.answers) {
       const wrap = document.createElement("div");
       wrap.className = "ho-msg";
       if (answer.thinking) {
@@ -900,11 +956,7 @@
     const paneRect = pane.getBoundingClientRect();
     const anchorRect = anchor.getBoundingClientRect();
     const top = pane.scrollTop + (anchorRect.top - paneRect.top) - 8;
-    try {
-      pane.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
-    } catch (e) {
-      pane.scrollTop = Math.max(0, top);
-    }
+    smoothScroll(pane, top);
     return true;
   }
 
@@ -935,11 +987,11 @@
     if (answer.thinking) {
       const chars = answer.thinking.replace(/\s+/g, "").length;
       const bits = [];
-      if (chars) bits.push(chars >= 1000 ? (chars / 1000).toFixed(1) + " 千字" : chars + " 字");
-      if (answer.elapsed) bits.push("用时 " + answer.elapsed.toFixed(1) + " 秒");
+      if (chars) bits.push(t("charsText", chars));
+      if (answer.elapsed) bits.push(t("elapsedText", answer.elapsed));
       const holder = proseOf(answer.thinking);
       html += '<details class="ho-think"><summary class="ho-think-head">' +
-        '<span class="ho-think-title">深度思考</span>' +
+        '<span class="ho-think-title">' + MD.escapeHtml(t("thinking")) + '</span>' +
         '<span class="ho-think-meta">' + MD.escapeHtml(bits.join(" · ")) + "</span></summary>" +
         holder.outerHTML + "</details>";
     }
@@ -952,15 +1004,14 @@
 
   /** 导出用：把一轮提问的附件渲染成可点击展开的 <details>。
    *  正文只有在网页端点开过这个附件时才有（离线 HTML 里没法再请求签名地址）。 */
-  function attachHtmlOf(t) {
-    if (!t.attachments || !t.attachments.length) return "";
-    const rows = t.attachments.map((a) => {
-      const name = MD.escapeHtml(a.isImage ? "[图片] " + (a.name || "") : (a.name || "[附件]"));
+  function attachHtmlOf(turn) {
+    if (!turn.attachments || !turn.attachments.length) return "";
+    const rows = turn.attachments.map((a) => {
+      const name = MD.escapeHtml(a.isImage ? t("image") + " " + (a.name || "") : (a.name || t("attachment")));
       const size = a.size ? (a.size >= 1048576 ? (a.size / 1048576).toFixed(1) + " MB" : Math.round(a.size / 1024) + " KB") : "";
       const content = a.text
         ? MD.escapeHtml(a.text)
-        : "（这个附件在导出时还没有读取过正文。附件正文要靠签名地址单独请求，离线 HTML 里拿不到；" +
-          "在网页端点开一次文件名再导出，正文就会带进来。原始地址：" + (a.url || "—") + "）";
+        : MD.escapeHtml(t("exportUnread") + (a.url || "—") + t("exportUnreadEnd"));
       return '<details class="ho-attach"><summary class="ho-attach-name">' + name +
         (size ? ' <span class="ho-attach-size">' + size + "</span>" : "") + "</summary>" +
         '<textarea readonly class="ho-attach-text">' + content + "</textarea></details>";
@@ -1049,10 +1100,10 @@
       }
     }
     empty.hidden = shown > 0;
-    count.textContent = q ? shown + ' / ' + panels.length + ' 条' : panels.length + ' 条';
+    count.textContent = q ? shown + ' / ' + panels.length + HO_TEXT.turnSuffix : panels.length + HO_TEXT.turnSuffix;
   }
   function copyText(text, btn, fallbackEl) {
-    var label = btn.getAttribute('data-label') || '复制';
+    var label = btn.getAttribute('data-label') || HO_TEXT.copy;
     function flash(msg, ok) {
       btn.textContent = msg;
       btn.classList.toggle('ok', !!ok);
@@ -1062,18 +1113,18 @@
       try {
         var box = btn.closest('.ho-code');
         var el = fallbackEl || (box && box.querySelector('pre'));
-        if (!el) { flash('复制失败', false); return; }
+        if (!el) { flash(HO_TEXT.copyFailed, false); return; }
         var range = document.createRange();
         range.selectNodeContents(el);
         var sel = window.getSelection();
         sel.removeAllRanges();
         sel.addRange(range);
         var ok = document.execCommand('copy');
-        flash(ok ? '已复制' : '已选中，请按 Ctrl+C', ok);
-      } catch (e) { flash('复制失败', false); }
+        flash(ok ? HO_TEXT.copied : HO_TEXT.selectCopy, ok);
+      } catch (e) { flash(HO_TEXT.copyFailed, false); }
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(function () { flash('已复制', true); }, fallback);
+      navigator.clipboard.writeText(text).then(function () { flash(HO_TEXT.copied, true); }, fallback);
     } else {
       fallback();
     }
@@ -1142,54 +1193,65 @@
   function exportHtml(notify) {
     if (!state.turns.length) {
       if (notify) {
-        state.error = state.error || "没有可导出的内容（先打开一个对话）。";
+        state.error = state.error || t("noExport");
         renderAll();
       }
       return;
     }
     const title = currentTitle();
+    const lang = I18N.getLang();
     const css = STYLES.base + STYLES.export;
-    const items = state.turns.map((t, i) =>
+    const items = state.turns.map((turn, i) =>
       '<li class="ho-item' + (i === 0 ? " active" : "") + '" data-i="' + i + '">' +
       '<div class="ho-item-q"><span class="ho-item-idx">' + (i + 1) + "</span>" +
-      MD.escapeHtml(truncate(t.q.replace(/\s+/g, " "), 160)) + "</div>" +
-      (t.answers.length > 1 ? '<span class="ho-badge">' + t.answers.length + " 段回答</span>" : "") +
+      MD.escapeHtml(truncate(displayQ(turn.q).replace(/\s+/g, " "), 160)) + "</div>" +
+      (turn.answers.length > 1 ? '<span class="ho-badge">' + MD.escapeHtml(t("answerSegments", turn.answers.length)) + "</span>" : "") +
       "</li>").join("\n");
-    const panels = state.turns.map((t, i) => {
-      const answerMd = copyableMd(t.answers.map((a) => a.text).filter((s) => s && s.trim()).join("\n\n"));
+    const panels = state.turns.map((turn, i) => {
+      const answerMd = copyableMd(turn.answers.map((a) => a.text).filter((s) => s && s.trim()).join("\n\n"));
       return '<section class="ho-panel-data" data-i="' + i + '"' + (i === 0 ? "" : " hidden") + ">" +
         '<div class="ho-question-box"><div class="ho-question-bar">' +
-        '<span class="ho-question-label">提问 · 第 ' + (i + 1) + " 轮</span>" +
+        '<span class="ho-question-label">' + MD.escapeHtml(t("questionLabel", i + 1)) + "</span>" +
         '<div class="ho-question-actions">' +
-        '<button type="button" class="ho-copy-btn ho-copy-q" data-label="复制提问">复制提问</button>' +
-        '<button type="button" class="ho-copy-btn ho-copy-a" data-label="复制回答"' +
-        (answerMd ? "" : " disabled") + ">复制回答</button>" +
-        '<button type="button" class="ho-jump-btn">跳到回答 ↓</button></div></div>' +
-        '<pre class="ho-question"' + (qTextOf(t) ? "" : ' style="display:none"') + ">" +
-        MD.escapeHtml(qTextOf(t)) + "</pre></div>" +
-        attachHtmlOf(t) +
+        '<button type="button" class="ho-copy-btn ho-copy-q" data-label="' + MD.escapeHtml(t("copyPrompt")) + '">' + MD.escapeHtml(t("copyPrompt")) + '</button>' +
+        '<button type="button" class="ho-copy-btn ho-copy-a" data-label="' + MD.escapeHtml(t("copyAnswer")) + '"' +
+        (answerMd ? "" : " disabled") + ">" + MD.escapeHtml(t("copyAnswer")) + "</button>" +
+        '<button type="button" class="ho-jump-btn">' + MD.escapeHtml(t("jumpToAnswer")) + "</button></div></div>" +
+        '<pre class="ho-question"' + (displayQ(qTextOf(turn)) ? "" : ' style="display:none"') + ">" +
+        MD.escapeHtml(displayQ(qTextOf(turn))) + "</pre></div>" +
+        attachHtmlOf(turn) +
         // 复制回答要用 Markdown 原文（保留代码围栏/公式），把它放进 <template>：
         // template 的内容不会被渲染，textContent 还原出来就是原文。
         '<template class="ho-src-a">' + MD.escapeHtml(answerMd) + "</template>" +
-        (t.answers.length ? '<div class="ho-answer-anchor">回答 · ' + t.answers.length + " 段</div>" : "") +
-        (t.answers.length ? t.answers.map(answerHtml).map((h) => '<div class="ho-msg">' + h + "</div>").join("")
-          : '<div class="ho-empty">这条提问还没有回答。</div>') +
+        (turn.answers.length ? '<div class="ho-answer-anchor">' + MD.escapeHtml(t("answerLabel", turn.answers.length)) + "</div>" : "") +
+        (turn.answers.length ? turn.answers.map(answerHtml).map((h) => '<div class="ho-msg">' + h + "</div>").join("")
+          : '<div class="ho-empty">' + MD.escapeHtml(t("noAnswerForThis")) + "</div>") +
         "</section>";
     }).join("\n");
 
-    const doc = "<!doctype html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n" +
+    const exportText = {
+      copy: t("copy"),
+      copied: t("copied"),
+      copyFailed: t("copyFailed"),
+      selectCopy: t("selectCopy"),
+      turnSuffix: t("turnSuffix")
+    };
+
+    const doc = "<!doctype html>\n<html lang=\"" + (lang === "zh" ? "zh-CN" : "en") + "\">\n<head>\n<meta charset=\"utf-8\">\n" +
       '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
-      "<title>" + MD.escapeHtml(title) + " · 对话大纲</title>\n<style>" + css + "</style>\n</head>\n<body>\n" +
+      "<title>" + MD.escapeHtml(title) + MD.escapeHtml(t("exportTitleSuffix")) + "</title>\n<style>" + css + "</style>\n</head>\n<body>\n" +
       '<div class="ho-doc-head">\n' +
       '<span class="ho-doc-title">' + MD.escapeHtml(title) + "</span>\n" +
-      '<span class="ho-doc-meta" id="ho-count">' + state.turns.length + " 条</span>\n" +
-      '<input class="ho-search" id="ho-search" type="search" placeholder="搜索提问和回答…" autocomplete="off">\n' +
-      '<span class="ho-doc-meta">导出于 ' + new Date().toLocaleString("zh-CN") + "</span>\n</div>\n" +
+      '<span class="ho-doc-meta" id="ho-count">' + MD.escapeHtml(t("countAll", state.turns.length)) + "</span>\n" +
+      '<input class="ho-search" id="ho-search" type="search" placeholder="' + MD.escapeHtml(t("searchPlaceholderShort")) + '" autocomplete="off">\n' +
+      '<span class="ho-doc-meta">' + MD.escapeHtml(t("exportFooter", new Date().toLocaleString(lang === "zh" ? "zh-CN" : "en-US"))) + "</span>\n</div>\n" +
       '<div class="ho-doc-main">\n<ul class="ho-list ho-doc-list" id="ho-list">\n' + items + "\n</ul>\n" +
-      '<div class="ho-doc-detail">\n<div class="ho-empty" id="ho-empty" hidden>没有匹配的提问或回答</div>\n' +
-      panels + "\n</div>\n</div>\n<script>" + EXPORT_SCRIPT + "</" + "script>\n</body>\n</html>";
+      '<div class="ho-doc-detail">\n<div class="ho-empty" id="ho-empty" hidden>' + MD.escapeHtml(t("noMatch")) + '</div>\n' +
+      panels + "\n</div>\n</div>\n" +
+      "<script>var HO_TEXT=" + JSON.stringify(exportText) + ";</" + "script>\n" +
+      "<script>" + EXPORT_SCRIPT + "</" + "script>\n</body>\n</html>";
 
-    download(doc, safeName(title) + "-对话大纲-" + stamp() + ".html");
+    download(doc, safeName(title) + "-" + (lang === "zh" ? "对话大纲" : "outline") + "-" + stamp() + ".html");
   }
 
   /* ------------------------------------------------------------ 事件接入 */
@@ -1209,7 +1271,7 @@
         mergeMessages(d.sessionId, d.messages, d.title);
         state.error = "";
       } else {
-        state.error = "读取对话数据失败：" + (d.error || "未知错误");
+        state.error = t("readFailed", d.error || t("unknownError"));
       }
       if (ui && !ui.panel.hidden && d.sessionId === state.sessionId) renderAll();
     }
@@ -1219,7 +1281,7 @@
       filePending.delete(d.requestId);
       clearTimeout(p.timer);
       if (d.ok) p.resolve(d);
-      else p.reject(new Error(d.error || "读取附件失败"));
+      else p.reject(new Error(d.error || t("unknownError")));
       return;
     }
     if (d.type === "fileurl" && d.fileId && d.url) {

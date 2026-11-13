@@ -1,0 +1,4 @@
+{
+  "extName": { "message": "DeepSeek 对话大纲" },
+  "extDesc": { "message": "把当前 DeepSeek 对话的全部提问与回答做成可搜索的大纲，代码高亮+复制，可导出单文件 HTML；另把输入框改为 Enter 换行、Ctrl+Enter 发送。" }
+}

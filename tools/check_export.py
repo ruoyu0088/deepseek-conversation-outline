@@ -13,6 +13,7 @@ import time
 
 sys.path.insert(0, r"C:\Users\ruoyu\workspace\chrome-cdp-tools")
 from cdp import Session, _pick  # noqa: E402
+import harness as H  # noqa: E402
 
 
 def structural(html: str) -> dict:
@@ -49,6 +50,7 @@ def main() -> int:
     print("structure:", json.dumps(structural(html), ensure_ascii=False))
 
     sess = Session(_pick(port, None)["webSocketDebuggerUrl"])
+    H.ensure_active(sess)
     try:
         sess.send("Page.enable")
         sess.send("Page.navigate", {"url": "file:///" + path.replace("\\", "/")})

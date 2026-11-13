@@ -21,6 +21,7 @@
 
   const FLAG = "__dsOutline";
   const REQ = "__dsOutlineReq";
+  const t = (window.__dsI18n && window.__dsI18n.t) || ((k) => k);
   const HISTORY_API = /\/api\/v0\/chat\/history_messages(?:[?#]|$)/;
   const MAX_MESSAGES = 4000;
 
@@ -189,12 +190,12 @@
     const resp = await origFetch(url, { credentials: "include", headers, method: "GET" });
     if (!resp.ok) {
       const body = await resp.text().catch(() => "");
-      throw new Error("HTTP " + resp.status + (body ? " " + body.slice(0, 200) : ""));
+      throw new Error(t("httpError", resp.status, body ? body.slice(0, 200) : ""));
     }
     const data = await resp.json();
     const biz = (data && data.data && data.data.biz_data) || null;
-    if (!biz) throw new Error("响应里没有 biz_data（code=" + (data && data.code) + " " + ((data && data.msg) || "") + "）");
-    if (!Array.isArray(biz.chat_messages)) throw new Error("响应里没有 chat_messages");
+    if (!biz) throw new Error(t("noBizData", (data && data.code), (data && data.msg) || ""));
+    if (!Array.isArray(biz.chat_messages)) throw new Error(t("noMessages"));
     const messages = biz.chat_messages.slice(0, MAX_MESSAGES);
     return {
       messages,
@@ -209,11 +210,11 @@
     const o = opt || {};
     let url = typeof o.url === "string" ? o.url : "";
     if (!url && o.fileId) url = fileUrlById.get(String(o.fileId)) || "";
-    if (!url) throw new Error("没有可用的附件地址");
+    if (!url) throw new Error(t("noUrl"));
     let u;
-    try { u = new URL(url); } catch (e) { throw new Error("附件地址无效"); }
+    try { u = new URL(url); } catch (e) { throw new Error(t("invalidUrl")); }
     if (u.hostname !== "files.deepseeksvc.com" || !/\/api\/file$/.test(u.pathname)) {
-      throw new Error("不允许的附件地址");
+      throw new Error(t("disallowedUrl"));
     }
     // 实测：少了 ty=r 这个参数，服务端直接拒绝（浏览器里表现为 TypeError: Failed to fetch）。
     // 页面自己请求附件时都会带，但我们从签名路径 / DOM 里拼出来的可能没有，这里兜一层。
@@ -225,7 +226,7 @@
     });
     if (!resp.ok) {
       // 403 多半是 signed_path 里的 state 签名过期，重新打开会话能拿到新路径
-      throw new Error("HTTP " + resp.status + (resp.status === 403 ? "（附件签名可能已过期，重新打开这个会话再试）" : ""));
+      throw new Error(t("httpError", resp.status, resp.status === 403 ? t("expired") : ""));
     }
     const ct = (resp.headers.get("content-type") || "").toLowerCase();
     if (ct.indexOf("image/") === 0) {

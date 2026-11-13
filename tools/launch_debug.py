@@ -74,6 +74,11 @@ def main() -> int:
         "--user-data-dir=%s" % args.profile,
         "--no-first-run", "--no-default-browser-check", "--profile-directory=Default",
         "--enable-unsafe-extension-debugging",
+        # 窗口被别的窗口完全遮住时 Chrome 会把页面标成 hidden：那时 CDP 的
+        # Input.dispatchKeyEvent 不投递、navigator.clipboard 也会被拒，测试会假失败。
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+        "--disable-background-timer-throttling",
         args.url,
     ]
     subprocess.Popen(cmd, close_fds=True)

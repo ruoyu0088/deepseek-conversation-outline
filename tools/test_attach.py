@@ -15,6 +15,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, r"C:\Users\ruoyu\workspace\chrome-cdp-tools")
 
 from cdp import Session, _pick  # noqa: E402
+import harness as H  # noqa: E402
 
 DEFAULT_SESSION = "2c9ce637-29ad-43a8-ba4f-3e28973db6ae"   # 有 bundle.txt / right {.txt 两个附件
 
@@ -24,6 +25,7 @@ def main() -> int:
     session = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_SESSION
     problems = []
     sess = Session(_pick(port, "chat.deepseek.com")["webSocketDebuggerUrl"])
+    H.ensure_active(sess)
     try:
         sess.send("Page.enable")
         sess.send("Page.navigate", {"url": "https://chat.deepseek.com/a/chat/s/" + session})

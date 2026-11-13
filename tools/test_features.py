@@ -25,6 +25,7 @@ def main() -> int:
     session = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_SESSION
     problems = []
     sess = Session(_pick(port, "chat.deepseek.com")["webSocketDebuggerUrl"])
+    H.ensure_active(sess)
     try:
         sess.send("Page.enable")
         sess.send("Page.navigate", {"url": "https://chat.deepseek.com/a/chat/s/" + session})
