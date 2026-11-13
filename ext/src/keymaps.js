@@ -216,6 +216,30 @@
     return false;
   };
 
+  /** 「朗读 / 停止朗读」按钮：页面用 aria-label 标注（同时 role="button"）。
+   *  优先点"停止朗读"（正在播放时出现），没有则点最后一个"朗读"。
+   *  这样一次调用就能开启 / 关闭语音播报。 */
+  const VOICE_STOP_SELECTOR = '[role="button"][aria-label="停止朗读"]';
+  const VOICE_START_SELECTOR = '[role="button"][aria-label="朗读"]';
+  const VOICE_START_FALLBACK = '[role="button"][aria-label*="朗读"]';
+
+  /** 有"停止朗读"就点它，否则点页面上最后一个"朗读"按钮。
+   *  都找不到返回 false，交给页面自己处理。 */
+  const triggerLastVoicePlayback = () => {
+    const stops = document.querySelectorAll(VOICE_STOP_SELECTOR);
+    if (stops.length) {
+      stops[stops.length - 1].click();
+      return true;
+    }
+    let list = Array.from(document.querySelectorAll(VOICE_START_SELECTOR));
+    if (!list.length) list = Array.from(document.querySelectorAll(VOICE_START_FALLBACK));
+    if (!list.length) return false;
+    const target = list[list.length - 1];
+    if (!target) return false;
+    target.click();
+    return true;
+  };
+
   /** Ctrl+/ 聚焦输入框；Ctrl+Alt+U 打开上传文件对话框。 */
   const composerShortcutHandler = (ev) => {
     if (ev.isComposing) return;
@@ -229,6 +253,15 @@
     }
     if (ev.ctrlKey && ev.altKey && !ev.shiftKey && String(ev.key).toLowerCase() === "u") {
       if (!openUploadDialog()) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
+      return;
+    }
+    if (ev.ctrlKey && ev.altKey && !ev.shiftKey &&
+        (ev.code === "KeyP" || String(ev.key).toLowerCase() === "p")) {
+      if (ev.repeat) return;
+      if (!triggerLastVoicePlayback()) return;
       ev.preventDefault();
       ev.stopPropagation();
       ev.stopImmediatePropagation();
