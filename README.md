@@ -1,5 +1,9 @@
 # DeepSeek 对话大纲（Chrome 扩展）
 
+[![Release](https://img.shields.io/github/v/release/ruoyu0088/deepseek-conversation-outline?display_name=tag&sort=semver)](https://github.com/ruoyu0088/deepseek-conversation-outline/releases/latest)
+[![Download](https://img.shields.io/github/downloads/ruoyu0088/deepseek-conversation-outline/total)](https://github.com/ruoyu0088/deepseek-conversation-outline/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/ruoyu0088/deepseek-conversation-outline)](LICENSE)
+
 [English](#english)
 
 解决长对话里"想找自己之前问过的某个问题只能拼命往上滚"的问题：把当前 DeepSeek 对话的全部提问与回答做成一个可搜索、可离线保存的大纲。
@@ -12,14 +16,20 @@
 
 ## 安装（一次性，只能手动点）
 
-1. Chrome 地址栏打开 `chrome://extensions`
-2. 右上角打开 **开发者模式**
-3. 点 **加载已解压的扩展程序**，选择目录：`C:\Users\ruoyu\workspace\deepseek-conversation-outline\ext`
-4. 打开任意 DeepSeek 对话页（`https://chat.deepseek.com/a/chat/s/…`），右下角会出现一个圆形按钮
+**方式一：下载 Release 的 ZIP（推荐）**
 
-> 双击 `安装扩展.bat` 可以直接帮你打开 `chrome://extensions` 和这个 `ext` 目录。
->
-> 目录里的文件改了以后，回到 `chrome://extensions` 点该扩展的"刷新"图标即可生效。
+1. 打开 [最新 Release](https://github.com/ruoyu0088/deepseek-conversation-outline/releases/latest)，下载 `deepseek-conversation-outline-1.0.0.zip`
+2. 解压到任意位置——解压出来是**一个文件夹**（`deepseek-conversation-outline-1.0.0`），里面直接有 `manifest.json`
+3. Chrome 地址栏打开 `chrome://extensions`，右上角打开 **开发者模式**
+4. 点 **加载已解压的扩展程序**，选择**解压出来的那个文件夹**
+5. 打开任意 DeepSeek 对话页（`https://chat.deepseek.com/a/chat/s/…`），右下角会出现一个圆形按钮
+
+**方式二：直接加载仓库里的 `ext/` 目录（开发者）**
+
+1. `git clone https://github.com/ruoyu0088/deepseek-conversation-outline.git`
+2. `chrome://extensions` → 开发者模式 → **加载已解压的扩展程序** → 选择 `<仓库目录>/ext`
+
+> 改了 `ext/` 里的文件后，回到 `chrome://extensions` 点该扩展的"刷新"图标，再刷新 DeepSeek 页面即可生效。
 
 ## 使用
 
@@ -102,7 +112,9 @@ ext/vendor/katex/           KaTeX（约 275KB，离线打包，输出 MathML）
 ext/_locales/             Chrome 扩展页显示的名称/描述（en、zh_CN）
 tools/                   开发期验证脚本（走 CDP，不影响扩展运行）
 recon/                   抓包样本与验证产物（本地文件，不进版本库）
-安装扩展.bat              打开 chrome://extensions 与 ext 目录
+.github/workflows/release.yml  打 tag 时自动打包 ZIP 并发布 Release
+docs/release-notes/      每个版本的 Release Note（中英双语，workflow 直接读取）
+LICENSE                  MIT
 ```
 
 ## 已知边界
@@ -193,6 +205,27 @@ $env:MKL_THREADING_LAYER = "TBB"
 - **回归**：`test_real.py` / `test_features.py` / `test_attach.py` / `test_attach_export.py` / `test_ui.py` / `check_export.py` 全过（77 轮、335 代码块、20815 高亮 token、0 残留 `[reference:N]`）。
 - **修过的两个坑**：`ext/src/content.js:368` 曾重复声明 `function open() {`（语法错误，`node --check` 定位到报错行 1310）；`scrollTo({behavior:"smooth"})` 在窗口被遮挡时不走动画，已加 `smoothScroll()` 兜底（220ms 后位置没动就直接赋值）。
 
+## 发布（维护者）
+
+版本号只写在 `ext/manifest.json` 的 `version` 字段里。发版流程：
+
+```powershell
+# 1. 改 ext/manifest.json 的 version，并新增 docs/release-notes/v<版本>.md
+git commit -am "chore(release): v1.0.0"
+git push
+# 2. 打 tag 并推送 —— 这一步会触发 .github/workflows/release.yml
+git tag -a v1.0.0 -m "DeepSeek 对话大纲 v1.0.0"
+git push origin v1.0.0
+```
+
+workflow 会校验 tag 与 `manifest.json` 的 `version` 一致（不一致直接失败，避免发错版本），
+然后把 `ext/` 打成 `deepseek-conversation-outline-<版本>.zip`（ZIP 里是一个同名文件夹），
+用 `docs/release-notes/v<版本>.md` 作为 Release 正文发布到 Releases。
+
+## 许可证
+
+[MIT](LICENSE) © 2026 ruoyu0088
+
 ## English
 
 ### DeepSeek Conversation Outline (Chrome extension)
@@ -211,12 +244,28 @@ It is the DeepSeek port of [`chatgpt-conversation-outline`](../chatgpt-conversat
 
 #### Install (manual, one-time)
 
-1. Open `chrome://extensions`.
-2. Enable **Developer mode** (top right).
-3. Click **Load unpacked** and choose `...\deepseek-conversation-outline\ext`.
-4. Open any DeepSeek chat (`https://chat.deepseek.com/a/chat/s/…`). A round button appears at the bottom right.
+**Option 1: download the release ZIP (recommended)**
 
-After editing files in `ext/`, click the extension's refresh icon on `chrome://extensions`.
+1. Open the [latest release](https://github.com/ruoyu0088/deepseek-conversation-outline/releases/latest) and download `deepseek-conversation-outline-1.0.0.zip`.
+2. Unzip it anywhere — you get **one folder** (`deepseek-conversation-outline-1.0.0`) that contains `manifest.json` directly.
+3. Open `chrome://extensions` and enable **Developer mode** (top right).
+4. Click **Load unpacked** and pick **that unzipped folder**.
+5. Open any DeepSeek chat (`https://chat.deepseek.com/a/chat/s/…`). A round button appears at the bottom right.
+
+**Option 2: load `ext/` from a clone (developers)**
+
+1. `git clone https://github.com/ruoyu0088/deepseek-conversation-outline.git`
+2. `chrome://extensions` → Developer mode → **Load unpacked** → choose `<repo>/ext`.
+
+After editing files in `ext/`, click the extension's refresh icon on `chrome://extensions`, then reload the DeepSeek tab.
+
+#### Release (maintainers)
+
+The version lives only in `ext/manifest.json` (`version`). To publish: bump it, add `docs/release-notes/v<version>.md`, commit, then `git tag -a v1.0.0 -m "…" && git push origin v1.0.0`. The workflow validates that the tag matches the manifest version, zips `ext/` into `deepseek-conversation-outline-<version>.zip` (one folder inside the ZIP) and publishes a GitHub Release using that notes file as the body.
+
+#### License
+
+[MIT](LICENSE) © 2026 ruoyu0088
 
 #### Usage
 
@@ -264,6 +313,9 @@ ext/src/markdown.js      Markdown + sanitize + math + search highlight
 ext/src/styles.js        Styles (dark/light)
 ext/src/content.js       UI, search, copy, export
 ext/_locales/            Extension name/description (en, zh_CN)
+.github/workflows/release.yml  Tag → build ZIP → publish Release
+docs/release-notes/      Per-version release notes (zh + en), read by the workflow
+LICENSE                  MIT
 ```
 
 #### Known limits

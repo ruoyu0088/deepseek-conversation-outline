@@ -1,0 +1,60 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version from manifest and check the tag
+        id: meta
+        run: |
+          set -euo pipefail
+          VERSION=$(python3 -c "import json; print(json.load(open('ext/manifest.json'))['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Tag: $GITHUB_REF_NAME / manifest: $VERSION"
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match ext/manifest.json version $VERSION"
+            exit 1
+          fi
+          if [ ! -f "docs/release-notes/$GITHUB_REF_NAME.md" ]; then
+            echo "::error::missing docs/release-notes/$GITHUB_REF_NAME.md"
+            exit 1
+          fi
+
+      - name: Package the extension
+        id: pack
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.meta.outputs.version }}"
+          NAME="deepseek-conversation-outline-$VERSION"
+          rm -rf dist
+          mkdir -p "dist/$NAME"
+          # 只把扩展本体放进 ZIP：manifest.json 位于该文件夹的根，加载时选这个文件夹
+          cp -R ext/. "dist/$NAME/"
+          # 清掉不该进包的东西（本仓库 ext/ 里其实没有，防一手）
+          find "dist/$NAME" -name '.DS_Store' -delete
+          find "dist/$NAME" -name '*.map' -delete
+          (cd dist && zip -qr "$NAME.zip" "$NAME")
+          echo "asset=dist/$NAME.zip" >> "$GITHUB_OUTPUT"
+          unzip -l "dist/$NAME.zip" | head -20
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ steps.meta.outputs.version }}
+          body_path: docs/release-notes/${{ github.ref_name }}.md
+          files: ${{ steps.pack.outputs.asset }}
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
