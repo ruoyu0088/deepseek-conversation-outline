@@ -78,8 +78,10 @@
 }
 .ho-title { font-size: 14px; font-weight: 600; white-space: nowrap; }
 .ho-count { font-weight: 400; color: var(--ho-fg-dim); font-size: 12px; }
+/* 右侧一组控件整体换行：窄窗口时不会把"关闭"单独甩到第二行 */
+.ho-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
 .ho-search {
-  flex: 1 1 240px; min-width: 160px; background: var(--ho-bg-soft); color: inherit;
+  flex: 1 1 150px; min-width: 120px; background: var(--ho-bg-soft); color: inherit;
   border: 1px solid var(--ho-border); border-radius: 9px; padding: 8px 12px;
   font: inherit; font-size: 13px; outline: none;
 }
@@ -90,11 +92,11 @@
 }
 .ho-toggle input { width: 13px; height: 13px; accent-color: #4d6bfe; cursor: pointer; }
 .ho-lang {
-    background: var(--ho-bg-soft); color: inherit; border: 1px solid var(--ho-border);
-    border-radius: 9px; padding: 7px 10px; font: inherit; font-size: 12px; cursor: pointer;
-    outline: none; white-space: nowrap;
-  }
-  .ho-lang:focus { border-color: var(--ho-accent); }
+  background: var(--ho-bg-soft); color: inherit; border: 1px solid var(--ho-border);
+  border-radius: 9px; padding: 7px 10px; font: inherit; font-size: 12px; cursor: pointer;
+  outline: none; white-space: nowrap;
+}
+.ho-lang:focus { border-color: var(--ho-accent); }
 .ho-btn {
   background: var(--ho-bg-soft); color: inherit; border: 1px solid var(--ho-border);
   border-radius: 9px; padding: 7px 13px; font: inherit; font-size: 13px; cursor: pointer;

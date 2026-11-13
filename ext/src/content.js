@@ -241,19 +241,21 @@
         <div class="ho-head">
           <div class="ho-title"><span class="ho-title-text"></span> <span class="ho-count"></span></div>
           <input class="ho-search" type="search" autocomplete="off">
-          <label class="ho-toggle">
-            <input type="checkbox" class="ho-enter-toggle"> <span class="ho-enter-text"></span>
-          </label>
-          <label class="ho-toggle">
-            <input type="checkbox" class="ho-think-toggle"> <span class="ho-think-text"></span>
-          </label>
-          <select class="ho-lang">
-            <option value="auto"></option>
-            <option value="zh"></option>
-            <option value="en"></option>
-          </select>
-          <button class="ho-btn primary ho-download" type="button"></button>
-          <button class="ho-btn ho-close" type="button"></button>
+          <div class="ho-actions">
+            <label class="ho-toggle">
+              <input type="checkbox" class="ho-enter-toggle"> <span class="ho-enter-text"></span>
+            </label>
+            <label class="ho-toggle">
+              <input type="checkbox" class="ho-think-toggle"> <span class="ho-think-text"></span>
+            </label>
+            <select class="ho-lang">
+              <option value="auto"></option>
+              <option value="zh"></option>
+              <option value="en"></option>
+            </select>
+            <button class="ho-btn primary ho-download" type="button"></button>
+            <button class="ho-btn ho-close" type="button"></button>
+          </div>
         </div>
         <div class="ho-body">
           <ul class="ho-list"></ul>
@@ -275,6 +277,8 @@
 
     try { expanded = localStorage.getItem("ds-outline:panel-expanded") === "1"; } catch (e) { expanded = false; }
     ui.panel.classList.toggle("ho-max", expanded);
+
+    try { new ResizeObserver(applySearchPlaceholder).observe(ui.search); } catch (e) { /* 老浏览器无 RO */ }
 
     // "Enter 换行"开关：真正的键盘接管在 src/keymaps.js（document_start 加载），
     // 这里只负责读写同一个 localStorage 开关。
@@ -347,12 +351,21 @@
   }
 
   /** 把静态控件的文案刷新成当前语言（语言切换后调用）。 */
+  /** 搜索框宽度不够时换更短的 placeholder（长文案带快捷键提示，窄面板里会被截断） */
+  function applySearchPlaceholder() {
+    if (!ui) return;
+    const w = ui.search.clientWidth;
+    const key = w >= 300 ? "searchPlaceholder" : w >= 215 ? "searchPlaceholderShort" : "searchPlaceholderTiny";
+    const text = t(key);
+    if (ui.search.placeholder !== text) ui.search.placeholder = text;
+    ui.search.title = t("searchPlaceholder") + "\n" + t("searchFocusTitle");
+  }
+
   function refreshStaticText() {
     if (!ui) return;
     ui.fab.title = t("fabTitle");
     ui.titleText.textContent = t("appName");
-    ui.search.placeholder = t("searchPlaceholder");
-    ui.search.title = t("searchFocusTitle");
+    applySearchPlaceholder();
     ui.enterText.textContent = t("enterNewline");
     ui.enterText.parentElement.title = t("enterNewlineTitle");
     ui.thinkText.textContent = t("searchThinking");
